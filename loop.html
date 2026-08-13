@@ -31,6 +31,7 @@
   .en.hyp.failed { border-color:var(--bad); color:var(--bad); }
   .en.intake { border-color:var(--vio); color:var(--vio); }
   .en.fail { border-color:var(--bad); color:var(--bad); }
+  .en.evalE { border-color:var(--good); color:var(--good); }
   .en.picked { border-color:var(--good); color:var(--good); font-weight:600; }
   .en.killed { color:var(--dim); text-decoration:line-through; }
   .blurred .en.cand:not(:last-child) { filter:blur(4px); user-select:none; }
@@ -75,6 +76,10 @@
     <label><span id="cLabel">COMPASS</span> <span id="testing"></span></label>
     <div id="compassTxt" contenteditable="true"></div>
     <div class="meta-row">
+      <span id="arenaChip" onclick="cycleArena()" style="color:var(--vio);cursor:pointer;font-weight:700"></span>
+      <span onclick="addArena()" style="cursor:pointer;color:var(--vio)">＋</span>
+      <span id="projChip" onclick="cycleProject()" style="color:var(--blue);cursor:pointer"></span>
+      <span onclick="addProject()" style="cursor:pointer;color:var(--blue)">⊕</span>
       <span id="timerChip" onclick="cycleTimer()">⏱ off</span>
       <span id="boxChip">□ □ □ □ □</span>
       <span style="cursor:pointer" onclick="toggleBlur()">blur <b id="blurState" style="color:var(--acc)">ON</b></span>
@@ -92,6 +97,7 @@
   </div>
 
   <div class="pane on" id="pane-stream">
+    <div id="bigTimer" style="display:none;text-align:center;font-size:52px;font-variant-numeric:tabular-nums;letter-spacing:2px;padding:14px 0 4px;color:var(--ink)"></div>
     <div class="stream" id="stream"></div>
     <div class="note" id="emptyNote">One box. Type anything, Enter banks it. Prefixes switch type instantly — or tap a chip. A <b style="color:var(--acc)">&gt;wall</b> line updates the compass mid-flow without breaking it.</div>
   </div>
@@ -122,9 +128,10 @@
     <span class="chip c-intake" data-p="&lt;">&lt; intake</span>
     <span class="chip c-hyp" data-p="?">? hyp</span>
     <span class="chip c-fail" data-p="x ">x fail</span>
+    <span class="chip" style="color:var(--good)" data-p="*">* eval</span>
   </div>
   <input id="inp" placeholder="type… (> wall · ! flinch · = link · < intake · ? hyp · x fails-when)" autocomplete="off">
-  <div class="legend">plain = fog candidate · <b>&gt;</b>wall updates compass instantly · <b>=</b>link · <b>&lt;</b>intake (source ~ what it connects to) · <b>?</b>hypothesis · <b>!</b>flinch · <b>x </b>failure line</div>
+  <div class="legend">plain = fog · <b>&gt;</b>wall · <b>=</b>link · <b>&lt;</b>intake · <b>?</b>hyp · <b>!</b>flinch · <b>x </b>fails-when · <b>*</b>eval (a verdict, written)</div>
 </div></div>
 
 <script>
@@ -147,13 +154,18 @@ if(!DB){
   }catch(e){}
 }
 DB.modelCompass=DB.modelCompass||''; DB.compassLogM=DB.compassLogM||[];
+/* arenas (disciplines) */
+DB.arenas=DB.arenas||['FILM']; DB.arena=DB.arena||DB.arenas[0];
+if(!DB.compW){ DB.compW={}; DB.compW[DB.arenas[0]]={c:DB.compass||'',log:DB.compassLog||[]}; }
+DB.arenas.forEach(a=>{ if(!DB.compW[a]) DB.compW[a]={c:'',log:[]}; });
+DB.entries.forEach(e=>{ if(e.sc!=='m' && !e.ar) e.ar=DB.arenas[0]; });
 let SCOPE='w';
 const save=()=>localStorage.setItem(K,JSON.stringify(DB));
 const today=()=>new Date().toISOString().slice(0,10);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 let chipPrefix='', timer={len:0,rem:0,id:null}, testingIdx=null;
 
-const TYPES={wall:{tag:'WALL',cls:'wall'},cand:{tag:'',cls:'cand'},flinch:{tag:'FLINCH · banked, not acted on',cls:'flinch'},link:{tag:'LINK',cls:'link'},intake:{tag:'INTAKE',cls:'intake'},hyp:{tag:'HYPOTHESIS · untested',cls:'hyp'},fail:{tag:'FAILS WHEN → candidate compass',cls:'fail'}};
+const TYPES={wall:{tag:'WALL',cls:'wall'},cand:{tag:'',cls:'cand'},flinch:{tag:'FLINCH · banked, not acted on',cls:'flinch'},link:{tag:'LINK',cls:'link'},intake:{tag:'INTAKE',cls:'intake'},hyp:{tag:'HYPOTHESIS · untested',cls:'hyp'},fail:{tag:'FAILS WHEN → candidate compass',cls:'fail'},eval:{tag:'EVAL',cls:'evalE'}};
 
 function parse(v){
   if(v.startsWith('>')) return ['wall',v.slice(1).trim()];
@@ -162,6 +174,7 @@ function parse(v){
   if(v.startsWith('<')) return ['intake',v.slice(1).trim()];
   if(v.startsWith('?')) return ['hyp',v.slice(1).trim()];
   if(/^x\s/i.test(v)) return ['fail',v.slice(2).trim()];
+  if(v.startsWith('*')) return ['eval',v.slice(1).trim()];
   return ['cand',v.trim()];
 }
 $('inp').addEventListener('keydown',e=>{
@@ -179,34 +192,64 @@ document.querySelectorAll('.chip').forEach(ch=>ch.onclick=()=>{
 function addEntry(ty,t){
   const now=new Date();
   const e={t,ty,d:today(),tm:String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0'),ts:Date.now(),cx:DB.compass||'',state:'',rev:0};
-  e.sc=SCOPE;
+  e.sc=SCOPE; if(SCOPE!=='m'){ e.ar=DB.arena; const P=pget(); if(P.cur&&P.cur!=='ALL') e.pj=P.cur; }
   if(ty==='hyp') e.st='untested';
   if(ty==='wall'){
     if(SCOPE==='m'){ if(DB.modelCompass) DB.compassLogM.push({t:DB.modelCompass,d:today()}); DB.modelCompass=t; }
-    else { if(DB.compass) DB.compassLog.push({t:DB.compass,d:today()}); DB.compass=t; }
+    else { const A=DB.compW[DB.arena]; if(A.c) A.log.push({t:A.c,d:today()}); A.c=t; }
     renderCompass();
   }
   DB.entries.push(e); save();
   if(SCOPE==='m') renderModel(); else renderStream();
 }
 function renderCompass(){
-  $('cLabel').textContent = SCOPE==='m' ? 'MODEL-COMPASS' : 'COMPASS';
-  $('compassTxt').textContent = SCOPE==='m' ? (DB.modelCompass||'') : (DB.compass||'');
+  $('cLabel').textContent = SCOPE==='m' ? 'MODEL-COMPASS' : DB.arena+' · COMPASS';
+  $('compassTxt').textContent = SCOPE==='m' ? (DB.modelCompass||'') : (DB.compW[DB.arena].c||'');
+  $('arenaChip').textContent='▸ '+DB.arena;
+  const P=pget(); $('projChip').textContent='▪ '+(P.cur||'ALL');
 }
 $('compassTxt').addEventListener('blur',()=>{
   const v=$('compassTxt').textContent.trim();
   if(SCOPE==='m'){ if(v!==DB.modelCompass){ if(DB.modelCompass) DB.compassLogM.push({t:DB.modelCompass,d:today()}); DB.modelCompass=v; save(); } }
-  else { if(v!==DB.compass){ if(DB.compass) DB.compassLog.push({t:DB.compass,d:today()}); DB.compass=v; save(); } }
+  else { const A=DB.compW[DB.arena]; if(v!==A.c){ if(A.c) A.log.push({t:A.c,d:today()}); A.c=v; save(); } }
 });
+function cycleArena(){
+  if(DB.arenas.length<2){ addArena(); return; }
+  const i=DB.arenas.indexOf(DB.arena);
+  DB.arena=DB.arenas[(i+1)%DB.arenas.length];
+  save(); renderCompass(); renderStream();
+}
+function addArena(){
+  const n=(prompt('New discipline name? (e.g. POETRY)')||'').trim().toUpperCase();
+  if(!n||DB.arenas.includes(n)) return;
+  DB.arenas.push(n); DB.compW[n]={c:'',log:[]}; DB.arena=n;
+  save(); renderCompass(); renderStream();
+}
+/* projects within a discipline */
+function pget(){ DB.proj=DB.proj||{}; DB.proj[DB.arena]=DB.proj[DB.arena]||{list:[],cur:'ALL'}; return DB.proj[DB.arena]; }
+function cycleProject(){
+  const P=pget();
+  if(!P.list.length){ addProject(); return; }
+  const opts=['ALL'].concat(P.list);
+  P.cur=opts[(opts.indexOf(P.cur)+1)%opts.length];
+  save(); renderCompass(); renderStream();
+}
+function addProject(){
+  const n=(prompt('Project name? (e.g. NEUKÖLLN)')||'').trim();
+  if(!n) return; const P=pget();
+  if(!P.list.includes(n)) P.list.push(n);
+  P.cur=n; save(); renderCompass(); renderStream();
+}
 
 function renderStream(){
-  const recent=DB.entries.filter(e=>e.sc!=='m').slice(-60);
+  const P=pget();
+  const recent=DB.entries.filter(e=>e.sc!=='m'&&(e.ar||DB.arenas[0])===DB.arena&&(P.cur==='ALL'||e.pj===P.cur)).slice(-60);
   $('stream').innerHTML=recent.map((e)=>{
     const i=DB.entries.indexOf(e);
     const T=TYPES[e.ty]||TYPES.cand;
     let extra='';
     if(e.ty==='hyp') extra=`<div class="acts"><button class="mini" onclick="deploy(${i})">⚗ test</button></div>`;
-    const tag=[T.tag,e.st&&e.st!=='untested'?e.st.toUpperCase():'',e.tm||''].filter(Boolean).join(' · ');
+    const tag=[T.tag,e.pj||'',e.st&&e.st!=='untested'?e.st.toUpperCase():'',e.tm||''].filter(Boolean).join(' · ');
     return `<div class="en ${T.cls} ${e.state||''} ${e.st||''}" >${tag?`<span class="tag">${tag}</span>`:''}${esc(e.t)}${extra}</div>`;
   }).join('');
   $('emptyNote').style.display=DB.entries.length?'none':'block';
@@ -218,7 +261,7 @@ document.body.classList.add('blurred');
 
 /* REVIEW: judge unreviewed candidates, fully, once */
 function review(){
-  const un=DB.entries.map((e,i)=>({e,i})).filter(x=>x.e.ty==='cand'&&!x.e.rev&&x.e.sc!=='m');
+  const un=DB.entries.map((e,i)=>({e,i})).filter(x=>x.e.ty==='cand'&&!x.e.rev&&x.e.sc!=='m'&&(x.e.ar||DB.arenas[0])===DB.arena);
   if(!un.length){ alert('No unreviewed candidates.'); return; }
   document.body.classList.remove('blurred'); $('blurState').textContent='OFF';
   $('stream').innerHTML='<h3>REVIEW — the batch, judged once. ★ pick · ✕ kill (kill earns a fails-when)</h3>'+un.map(({e,i})=>`
@@ -259,14 +302,16 @@ function cycleTimer(){
   const seq=[0,25,50,90,-1]; let next=seq[(seq.indexOf(timer.len)+1)%seq.length];
   if(next===-1){ const v=parseInt(prompt('Minutes?'),10); next=(v&&v>0)?v:0; }
   clearInterval(timer.id); timer.len=next; timer.rem=next*60;
-  if(!next){ $('timerChip').textContent='⏱ off'; $('timerChip').classList.remove('run'); return; }
-  $('timerChip').classList.add('run'); tick();
+  if(!next){ $('timerChip').textContent='⏱ off'; $('timerChip').classList.remove('run'); $('bigTimer').style.display='none'; return; }
+  $('timerChip').classList.add('run'); $('bigTimer').style.display='block'; tick();
   timer.id=setInterval(tick,1000);
 }
 function tick(){
   timer.rem--;
-  if(timer.rem<=0){ clearInterval(timer.id); $('timerChip').textContent='⏱ done → REVIEW'; return; }
-  $('timerChip').textContent='⏱ '+Math.floor(timer.rem/60)+':'+String(timer.rem%60).padStart(2,'0');
+  if(timer.rem<=0){ clearInterval(timer.id); $('timerChip').textContent='⏱ done'; $('bigTimer').textContent='DONE → REVIEW'; $('bigTimer').style.color='var(--good)'; return; }
+  const s=Math.floor(timer.rem/60)+':'+String(timer.rem%60).padStart(2,'0');
+  $('timerChip').textContent='⏱ '+s;
+  $('bigTimer').textContent=s; $('bigTimer').style.color=timer.rem<60?'var(--acc)':'var(--ink)';
 }
 
 /* library */
@@ -287,7 +332,7 @@ function renderLib(){
       const T=TYPES[e.ty]||TYPES.cand;
       const load=(e.ty==='wall'||e.ty==='fail')?`onclick='loadCompass(${JSON.stringify(e.t)})' style="cursor:pointer"`:'';
       const acts=e.ty==='hyp'?`<div class="acts"><button class="mini" onclick="deploy(${e.i})">⚗ test</button></div>`:'';
-      return `<div class="en ${T.cls} ${e.st||''} ${e.state||''}" ${load}>${esc(e.t)}<span class="tag">${e.d||''}${e.cx?' · '+esc(e.cx):''}${e.st?' · '+e.st:''}</span>${acts}</div>`;
+      return `<div class="en ${T.cls} ${e.st||''} ${e.state||''}" ${load}>${esc(e.t)}<span class="tag">${e.ar?esc(e.ar)+' · ':''}${e.d||''}${e.cx?' · '+esc(e.cx):''}${e.st?' · '+e.st:''}</span>${acts}</div>`;
     }).join('')||'<div class="note">none yet</div>');
   });
   $('libList').innerHTML=html;
