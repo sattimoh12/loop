@@ -91,8 +91,10 @@
 
   <div class="tabs">
     <span class="tab on" onclick="pane('stream',this)">STREAM</span>
+    <span class="tab" onclick="pane('draft',this);renderDraft()">STRAIGHT</span>
     <span class="tab" onclick="pane('model',this);renderModel()">MODEL</span>
     <span class="tab" onclick="pane('lib',this);renderLib()">LIBRARY</span>
+    <span class="tab" onclick="pane('refs',this);renderRefs()">REFS</span>
     <span class="tab" onclick="exportMd()">EXPORT ↓</span>
   </div>
 
@@ -102,6 +104,15 @@
     <div class="note" id="emptyNote">One box. Type anything, Enter banks it. Prefixes switch type instantly — or tap a chip. A <b style="color:var(--acc)">&gt;wall</b> line updates the compass mid-flow without breaking it.</div>
   </div>
 
+  <div class="pane" id="pane-draft">
+    <div class="note">The straight attempt — the scene itself, rules on, typed here. Autosaves as you go. When a wall appears, don't solve it: bank it in the box below with <b style="color:var(--acc)">&gt;</b> and keep writing. Scene text never leaves this device — exports carry titles and word counts only.</div>
+    <div class="ctl">
+      <select id="draftSel" onchange="pickDraft(this.value)" style="background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px;max-width:60%"></select>
+      <button class="btn" onclick="newDraft()">＋ new scene</button>
+      <span class="note" id="draftMeta"></span>
+    </div>
+    <textarea id="draftTxt" oninput="autosaveDraft()" placeholder="INT. — the straight version…" style="width:100%;min-height:55vh;background:var(--panel);border:1px solid var(--line);border-radius:10px;color:var(--ink);font-size:15px;line-height:1.6;padding:16px;outline:none;font-family:'Courier New',monospace"></textarea>
+  </div>
   <div class="pane" id="pane-model">
     <div class="note">Compass and fog on <b style="color:var(--acc)">the model itself</b>. Same prefixes, separate stream, its own compass. Nothing here is applied — it waits for the quarterly review.</div>
     <div class="ctl"><button class="btn" onclick="copyBank()">Copy all for the bank ↗</button></div>
@@ -116,6 +127,17 @@
     </div>
     <div id="libList"></div>
   </div>
+  <div class="pane" id="pane-refs">
+    <div class="note">Visual deposits — the native-medium rule made real. <b style="color:var(--ink)">Paste an image (⌘V) anywhere on this tab</b>, or use the button (on iPhone this opens your photo library). Each ref is stamped to the current discipline/project. Images are downscaled to fit local storage.</div>
+    <div class="ctl">
+      <label class="btn" style="cursor:pointer">＋ add image<input type="file" accept="image/*" style="display:none" onchange="addRefFile(this)"></label>
+    </div>
+    <div id="refGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-top:8px"></div>
+  </div>
+  <div id="refView" onclick="this.style.display='none'" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:99;align-items:center;justify-content:center;flex-direction:column;padding:20px">
+    <img id="refViewImg" style="max-width:100%;max-height:82vh;border-radius:8px">
+    <div id="refViewCap" style="color:var(--dim);font-size:13px;margin-top:10px;text-align:center"></div>
+  </div>
 </div>
 
 <div class="dock"><div class="dockin">
@@ -123,6 +145,7 @@
     <span class="chip core c-wall" data-p="&gt;">&gt; COMPASS</span>
     <span class="chip core c-cand on" data-p="">FOG</span>
     <span class="chip core c-link" data-p="=">= LINK</span>
+    <span class="chip core" style="color:var(--good)" onclick="pane('draft',document.querySelectorAll('.tab')[1]);renderDraft();event.stopPropagation()">✍ STRAIGHT</span>
     <span class="chipDivider"></span>
     <span class="chip c-flinch" data-p="!">! flinch</span>
     <span class="chip c-intake" data-p="&lt;">&lt; intake</span>
@@ -365,11 +388,77 @@ function exportMd(){
   md+='\n## Links\n'; by('link').forEach(e=>md+=`- ${e.t} _(${e.d})_\n`);
   md+='\n## Intake links\n'; by('intake').forEach(e=>md+=`- ${e.t} _(${e.d})_\n`);
   md+='\n## Hypotheses\n'; by('hyp').forEach(e=>md+=`- [${e.st}] ${e.t} _(${e.d})_\n`);
+  md+='\n## Straight drafts (titles only — scene text never leaves the device)\n';
+  (DB.drafts||[]).forEach(D=>md+=`- ${D.title} — ${(D.txt.trim().match(/\S+/g)||[]).length} words _(${D.pj||D.ar}, updated ${new Date(D.up).toISOString().slice(0,10)})_\n`);
   md+='\n## Candidates & flinches\n'; DB.entries.filter(e=>e.ty==='cand'||e.ty==='flinch').forEach(e=>md+=`- ${e.state==='picked'?'★ ':e.state==='killed'?'✕ ':''}${e.t} _(${e.d} · ${e.cx||''})_\n`);
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob([md],{type:'text/markdown'}));
   a.download=`loop_export_${today()}.md`; a.click();
 }
+/* ---- straight drafts (scene text: stays local, never exported in full) ---- */
+DB.drafts=DB.drafts||[]; let curDraft=null, draftTimer=null;
+function draftsHere(){ const P=pget(); return DB.drafts.map((d,i)=>({d,i})).filter(x=>x.d.ar===DB.arena&&(P.cur==='ALL'||x.d.pj===P.cur||!x.d.pj)); }
+function newDraft(){
+  const t=(prompt('Scene title?')||'').trim(); if(!t) return;
+  const P=pget();
+  DB.drafts.push({title:t, txt:'', ar:DB.arena, pj:(P.cur!=='ALL'?P.cur:''), d:today(), up:Date.now()});
+  curDraft=DB.drafts.length-1; save(); renderDraft();
+}
+function pickDraft(i){ curDraft=parseInt(i,10); renderDraft(); }
+function renderDraft(){
+  const list=draftsHere();
+  if(curDraft===null||!DB.drafts[curDraft]||DB.drafts[curDraft].ar!==DB.arena) curDraft=list.length?list[list.length-1].i:null;
+  $('draftSel').innerHTML=list.map(x=>`<option value="${x.i}" ${x.i===curDraft?'selected':''}>${esc(x.d.title)}</option>`).join('')||'<option>— no scenes yet —</option>';
+  const D=curDraft!==null?DB.drafts[curDraft]:null;
+  $('draftTxt').value=D?D.txt:'';
+  $('draftTxt').disabled=!D;
+  $('draftMeta').textContent=D?`${(D.txt.trim().match(/\S+/g)||[]).length} words · ${D.pj||D.ar}`:'';
+}
+function autosaveDraft(){
+  if(curDraft===null) return;
+  clearTimeout(draftTimer);
+  draftTimer=setTimeout(()=>{ const D=DB.drafts[curDraft]; D.txt=$('draftTxt').value; D.up=Date.now(); save(); $('draftMeta').textContent=`${(D.txt.trim().match(/\S+/g)||[]).length} words · ${D.pj||D.ar} · saved`; },600);
+}
+
+/* ---- visual refs ---- */
+DB.refs=DB.refs||[];
+function compressImg(file, cb){
+  const img=new Image();
+  img.onload=()=>{
+    const max=900, sc=Math.min(1, max/Math.max(img.width,img.height));
+    const c=document.createElement('canvas');
+    c.width=Math.round(img.width*sc); c.height=Math.round(img.height*sc);
+    c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+    cb(c.toDataURL('image/jpeg',0.72));
+  };
+  img.src=URL.createObjectURL(file);
+}
+function saveRef(dataUrl){
+  const cap=prompt('Caption / what it connects to? (optional)')||'';
+  const P=pget();
+  DB.refs.push({img:dataUrl, t:cap, ar:DB.arena, pj:(P.cur!=='ALL'?P.cur:''), d:today()});
+  try{ save(); }catch(e){ DB.refs.pop(); alert('Storage full — delete some refs or export first.'); return; }
+  if(cap) addEntry('link','[ref] '+cap);
+  renderRefs();
+}
+function addRefFile(inp){ const f=inp.files&&inp.files[0]; if(f) compressImg(f,saveRef); inp.value=''; }
+document.addEventListener('paste',e=>{
+  if(!$('pane-refs').classList.contains('on')) return;
+  const items=e.clipboardData&&e.clipboardData.items;
+  if(!items) return;
+  for(const it of items){ if(it.type.startsWith('image/')){ compressImg(it.getAsFile(),saveRef); e.preventDefault(); return; } }
+});
+function renderRefs(){
+  $('refGrid').innerHTML=DB.refs.map((r,i)=>`
+    <div style="position:relative">
+      <img src="${r.img}" onclick="viewRef(${i})" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;cursor:pointer;border:1px solid var(--line)">
+      <span onclick="delRef(${i})" style="position:absolute;top:4px;right:4px;background:rgba(0,0,0,.6);border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;cursor:pointer;color:var(--dim)">✕</span>
+      <div class="tag" style="font-size:10px;color:var(--dim);margin-top:2px">${esc(r.t||'')}${r.pj?' · '+esc(r.pj):''}</div>
+    </div>`).reverse().join('')||'<div class="note">Nothing yet. Paste an image or use ＋.</div>';
+}
+function viewRef(i){ const r=DB.refs[i]; $('refViewImg').src=r.img; $('refViewCap').textContent=[r.t,r.ar,r.pj,r.d].filter(Boolean).join(' · '); $('refView').style.display='flex'; }
+function delRef(i){ if(confirm('Remove this ref?')){ DB.refs.splice(i,1); save(); renderRefs(); } }
+
 renderCompass(); renderStream(); renderBoxes(); save();
 </script>
 </body>
