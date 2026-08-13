@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Loop</title>
+<style>
+  :root { --bg:#101014; --panel:#1a1a21; --ink:#e8e6e0; --dim:#8a8894; --acc:#d4a24e; --good:#7fb069; --bad:#c0564e; --blue:#6e9fc0; --line:#2a2a33; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--bg); color:var(--ink); font-family:-apple-system, 'Helvetica Neue', sans-serif; min-height:100vh; }
+  .wrap { max-width:780px; margin:0 auto; padding:20px 16px 80px; }
+  .compass { position:sticky; top:0; background:var(--bg); padding:14px 0 10px; z-index:10; border-bottom:1px solid var(--line); }
+  .compass label { font-size:11px; letter-spacing:2px; color:var(--acc); }
+  .compass textarea { width:100%; background:transparent; border:none; color:var(--ink); font-size:17px; line-height:1.4; resize:none; outline:none; font-family:inherit; padding:4px 0; min-height:28px; }
+  .compass .hint { font-size:11px; color:var(--dim); }
+  .compass .renames { font-size:11px; color:var(--dim); cursor:pointer; text-decoration:underline dotted; }
+  #testing { font-size:12px; color:var(--blue); padding-top:2px; display:none; }
+  .phase { display:none; padding-top:18px; }
+  .phase.active { display:block; }
+  h2 { font-size:12px; letter-spacing:3px; color:var(--dim); margin-bottom:10px; }
+  h3 { font-size:11px; letter-spacing:2px; color:var(--acc); margin:16px 0 6px; }
+  .btn { background:var(--panel); color:var(--ink); border:1px solid var(--line); border-radius:8px; padding:10px 16px; font-size:14px; cursor:pointer; }
+  .btn.primary { background:var(--acc); color:#111; border-color:var(--acc); font-weight:600; }
+  .btn.ghost { background:transparent; color:var(--dim); }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:10px 0; }
+  .timer { font-size:56px; font-variant-numeric:tabular-nums; text-align:center; margin:14px 0 4px; letter-spacing:2px; }
+  .timer.done { color:var(--good); }
+  .count { text-align:center; color:var(--dim); font-size:13px; margin-bottom:10px; }
+  #candInput { width:100%; background:var(--panel); border:1px solid var(--line); border-radius:10px; color:var(--ink); font-size:17px; padding:14px; outline:none; font-family:inherit; }
+  #candList { margin-top:10px; }
+  .cand { padding:8px 12px; border-bottom:1px solid var(--line); font-size:15px; }
+  .cand.flinch { color:var(--acc); }
+  .fogged #candList .cand { filter:blur(5px); user-select:none; }
+  .fogged #candList .cand:last-child { filter:none; }
+  .toggle { font-size:12px; color:var(--dim); cursor:pointer; user-select:none; }
+  .toggle b { color:var(--acc); }
+  .rc { display:flex; gap:8px; align-items:flex-start; padding:10px 0; border-bottom:1px solid var(--line); }
+  .rc .txt { flex:1; font-size:15px; }
+  .rc.killed .txt { color:var(--dim); text-decoration:line-through; }
+  .rc.picked .txt { color:var(--good); font-weight:600; }
+  .mini { background:transparent; border:1px solid var(--line); color:var(--dim); border-radius:6px; padding:3px 9px; cursor:pointer; font-size:13px; }
+  .mini.on { border-color:var(--good); color:var(--good); }
+  .mini.kill.on { border-color:var(--bad); color:var(--bad); }
+  .fline { width:100%; background:var(--panel); border:1px solid var(--line); border-radius:6px; color:var(--acc); font-size:13px; padding:6px 10px; margin-top:6px; outline:none; font-family:inherit; display:none; }
+  .rc.killed .fline { display:block; }
+  textarea.big { width:100%; background:var(--panel); border:1px solid var(--line); border-radius:10px; color:var(--ink); font-size:15px; line-height:1.5; padding:14px; min-height:90px; outline:none; font-family:inherit; }
+  .note { font-size:12px; color:var(--dim); margin:8px 0; line-height:1.5; }
+  .item { padding:9px 12px; border:1px solid var(--line); border-radius:8px; margin:6px 0; font-size:14px; }
+  .item .meta { font-size:11px; color:var(--dim); margin-top:2px; }
+  .item .acts { margin-top:6px; display:flex; gap:6px; }
+  .item.compassI { color:var(--acc); cursor:pointer; }
+  .item.compassI:hover { border-color:var(--acc); }
+  .item.linkI { color:var(--ink); }
+  .item.hypI { color:var(--blue); }
+  .item.hypI.held { color:var(--good); }
+  .item.hypI.failed { color:var(--bad); }
+  .item.candI { color:var(--dim); } .item.candI.pk { color:var(--good); } .item.candI.fl { color:var(--acc); }
+  .logItem { padding:10px 0; border-bottom:1px solid var(--line); font-size:13px; color:var(--dim); }
+  .logItem b { color:var(--ink); }
+  .boxes { text-align:center; font-size:22px; letter-spacing:6px; margin:6px 0; }
+  .tabs { display:flex; gap:14px; margin-top:22px; border-top:1px solid var(--line); padding-top:10px; flex-wrap:wrap; }
+  .tab { font-size:12px; letter-spacing:2px; color:var(--dim); cursor:pointer; }
+  .tab.on { color:var(--acc); }
+  .pane { display:none; } .pane.on { display:block; }
+  #libSearch { width:100%; background:var(--panel); border:1px solid var(--line); border-radius:8px; color:var(--ink); font-size:14px; padding:9px 12px; outline:none; font-family:inherit; margin:8px 0; }
+  .filterRow { display:flex; gap:10px; font-size:12px; color:var(--dim); flex-wrap:wrap; }
+  .filterRow span { cursor:pointer; } .filterRow span.on { color:var(--acc); }
+  .hverdict { display:none; margin-top:10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="compass">
+    <label>COMPASS</label>
+    <textarea id="compass" rows="1" placeholder="Name the wall as a conflict — or leave blank for an étude (no wall, pure play)"></textarea>
+    <div id="testing"></div>
+    <div class="row" style="margin:2px 0 0">
+      <span class="hint">excludes? · directs the next 5 min? · would you recognise solved?</span>
+      <span class="renames" onclick="logRename()">↻ renamed — log it</span>
+    </div>
+  </div>
+
+  <!-- SETUP -->
+  <div class="phase active" id="ph-setup">
+    <h2>SESSION</h2>
+    <div class="row">
+      <button class="btn" data-len="25" onclick="setLen(25,this)">25 min</button>
+      <button class="btn primary" data-len="50" onclick="setLen(50,this)">50 min</button>
+      <button class="btn" data-len="90" onclick="setLen(90,this)">90 min</button>
+    </div>
+    <div class="row">
+      <button class="btn primary" onclick="startGen()">Fog up → generate</button>
+      <button class="btn ghost" onclick="startGen(true)">Persistence (judge as you go)</button>
+    </div>
+    <div class="note">Insight route: nothing counts until the end — one candidate per line, Enter banks it. Prefix <b style="color:var(--acc)">!</b> to bank a flinch without acting on it. Same move flickers twice → dip: probe it five ways before ranging.</div>
+    <div id="setupPicks"></div>
+  </div>
+
+  <!-- GENERATE -->
+  <div class="phase" id="ph-gen">
+    <div class="timer" id="clock">50:00</div>
+    <div class="count"><span id="candCount">0</span> candidates · <span class="toggle" onclick="toggleFog()">line-blur <b id="fogState">ON</b></span></div>
+    <input id="candInput" placeholder="candidate… (Enter banks it, judgment stays off)" autocomplete="off">
+    <div id="candList"></div>
+    <div class="row" style="margin-top:16px">
+      <button class="btn" onclick="endGen()">End early → recapture</button>
+    </div>
+  </div>
+
+  <!-- RECAPTURE -->
+  <div class="phase" id="ph-rc">
+    <h2>RECAPTURE — the batch, judged fully, once</h2>
+    <div class="note">Audit: does the batch span <b>3+ moves</b>? If not, on a real wall, consider re-fogging. Then ★ the pick · ✕ the kills · every kill earns a failure line (<i>X fails when Y</i>) — tomorrow's compasses.</div>
+    <div id="rcList"></div>
+    <div class="row" style="margin-top:14px"><button class="btn primary" onclick="goLink()">→ Link</button></div>
+  </div>
+
+  <!-- LINK -->
+  <div class="phase" id="ph-link">
+    <h2>LINK — the map station</h2>
+    <div class="note">One per line: what do two of these share? Strip the nouns where the material is verbal. Visual knowledge: name the relation, don't flatten the image.</div>
+    <textarea class="big" id="linkBox" placeholder="these two share X…"></textarea>
+    <h3>HYPOTHESES — from play, unverified until deployed</h3>
+    <div class="note">One per line. These are proposals (<i>stillness at the top adds tension</i>). They stay blue until a session tests them.</div>
+    <textarea class="big" id="hypBox" placeholder="X seems to do Y…"></textarea>
+    <div class="row" style="margin-top:12px"><button class="btn primary" onclick="goClose()">→ Close</button></div>
+  </div>
+
+  <!-- CLOSE -->
+  <div class="phase" id="ph-close">
+    <h2>CLOSE — finish or park, deposit either way</h2>
+    <div class="hverdict" id="hverdict">
+      <div class="note">You deployed a hypothesis this session: <b id="hvText" style="color:var(--blue)"></b></div>
+      <div class="row">
+        <button class="btn" onclick="hypVerdict('held')" style="color:var(--good)">It held</button>
+        <button class="btn" onclick="hypVerdict('failed')" style="color:var(--bad)">It broke — write where</button>
+      </div>
+      <input class="fline" id="hvWhere" style="display:block" placeholder="broke when… (banks as a failure line)">
+    </div>
+    <div class="row">
+      <button class="btn" onclick="closeSession('finished')">✔ Finished / solved</button>
+      <button class="btn" onclick="closeSession('parked')">◐ Parked (failure lines written)</button>
+    </div>
+    <div class="note">Verify before ✔ : does the pick solve the stated conflict — <b>and did the original flinch go</b>? Flinch survives → rename the compass above, log it, park.</div>
+    <div class="note">Ritual, once, never repeated: deposits banked → box crossed → done is what you did.</div>
+  </div>
+
+  <!-- TABS -->
+  <div class="tabs">
+    <span class="tab on" onclick="showPane('today',this)">TODAY</span>
+    <span class="tab" onclick="showPane('lib',this);renderLib()">LIBRARY</span>
+    <span class="tab" onclick="showPane('log',this)">LOG</span>
+    <span class="tab" onclick="exportMd()">EXPORT ↓</span>
+  </div>
+  <div class="pane on" id="pane-today">
+    <div class="boxes" id="boxes">□ □ □ □ □</div>
+    <div class="note" style="text-align:center">blocks entered today — entry counts, quality doesn't</div>
+  </div>
+  <div class="pane" id="pane-lib">
+    <input id="libSearch" placeholder="search everything…" oninput="renderLib()">
+    <div class="filterRow" id="libFilters">
+      <span class="on" data-f="compass" onclick="tog(this)">COMPASSES</span>
+      <span class="on" data-f="link" onclick="tog(this)">LINKS</span>
+      <span class="on" data-f="hyp" onclick="tog(this)">HYPOTHESES</span>
+      <span data-f="cand" onclick="tog(this)">FOG (candidates)</span>
+    </div>
+    <div id="libList"></div>
+  </div>
+  <div class="pane" id="pane-log"><div id="logList"></div></div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let S = { len:50, cands:[], timerId:null, remaining:0, persistence:false, testingHyp:null, hypResult:null };
+const store = {
+  k:'loop_v1',
+  load(){ try{ const d=JSON.parse(localStorage.getItem(this.k))||{}; return Object.assign({sessions:[],bank:[],hyps:[],boxes:{}},d);}catch(e){return {sessions:[],bank:[],hyps:[],boxes:{}};} },
+  save(d){ localStorage.setItem(this.k, JSON.stringify(d)); }
+};
+let DB = store.load();
+const today = () => new Date().toISOString().slice(0,10);
+const esc = s => String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function setLen(n,el){ S.len=n; document.querySelectorAll('[data-len]').forEach(b=>b.classList.remove('primary')); el.classList.add('primary'); }
+function show(id){ document.querySelectorAll('.phase').forEach(p=>p.classList.remove('active')); $(id).classList.add('active'); }
+
+function startGen(persist){
+  S.persistence=!!persist; S.cands=[]; S.remaining=S.len*60; S.hypResult=null;
+  $('candList').innerHTML=''; $('candCount').textContent='0'; $('clock').classList.remove('done');
+  document.body.classList.toggle('fogged', !persist);
+  $('fogState').textContent = persist ? 'OFF' : 'ON';
+  show('ph-gen'); $('candInput').focus(); tick();
+  S.timerId = setInterval(tick,1000);
+}
+function tick(){
+  S.remaining--;
+  const m=Math.max(0,Math.floor(S.remaining/60)), s=Math.max(0,S.remaining%60);
+  $('clock').textContent = `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  if (S.remaining<=0){ clearInterval(S.timerId); $('clock').classList.add('done'); endGen(); }
+}
+document.addEventListener('keydown', e=>{
+  if (e.target.id==='candInput' && e.key==='Enter'){
+    const v=e.target.value.trim(); if(!v) return;
+    S.cands.push({t:v, flinch:v.startsWith('!'), state:'', fline:''});
+    const d=document.createElement('div'); d.className='cand'+(v.startsWith('!')?' flinch':''); d.textContent=v;
+    $('candList').appendChild(d); $('candCount').textContent=S.cands.length; e.target.value='';
+    d.scrollIntoView({block:'nearest'});
+  }
+});
+function toggleFog(){ const on=document.body.classList.toggle('fogged'); $('fogState').textContent=on?'ON':'OFF'; }
+function endGen(){
+  clearInterval(S.timerId); document.body.classList.remove('fogged');
+  const list=$('rcList'); list.innerHTML='';
+  S.cands.forEach((c,i)=>{
+    const row=document.createElement('div'); row.className='rc'; row.id='rc'+i;
+    row.innerHTML=`<button class="mini" onclick="mark(${i},'picked',this)">★</button>
+                   <button class="mini kill" onclick="mark(${i},'killed',this)">✕</button>
+                   <div style="flex:1"><div class="txt">${esc(c.t)}</div>
+                   <input class="fline" placeholder="fails when… (becomes a candidate compass)" oninput="S.cands[${i}].fline=this.value"></div>`;
+    list.appendChild(row);
+  });
+  if(!S.cands.length) list.innerHTML='<div class="note">Empty batch — happens. Close anyway; entry counted.</div>';
+  show('ph-rc');
+}
+function mark(i,state,btn){
+  const c=S.cands[i]; c.state=(c.state===state)?'':state;
+  const row=$('rc'+i); row.className='rc '+c.state;
+  row.querySelectorAll('.mini').forEach(b=>b.classList.remove('on'));
+  if(c.state) btn.classList.add('on');
+}
+function goLink(){ show('ph-link'); $('linkBox').focus(); }
+function goClose(){
+  if (S.testingHyp){ $('hverdict').style.display='block'; $('hvText').textContent=S.testingHyp.t; }
+  else $('hverdict').style.display='none';
+  show('ph-close');
+}
+function hypVerdict(v){ S.hypResult=v; if(v==='failed') $('hvWhere').focus(); }
+
+function closeSession(how){
+  const sess={ date:new Date().toISOString(), compass:$('compass').value.trim()||'(étude)',
+    len:S.len, route:S.persistence?'persistence':'insight', how,
+    cands:S.cands, links:$('linkBox').value.trim(), hyps:$('hypBox').value.trim(),
+    tested:S.testingHyp?S.testingHyp.t:null, testResult:S.hypResult };
+  DB.sessions.push(sess);
+  S.cands.filter(c=>c.fline&&c.fline.trim()).forEach(c=>DB.bank.push({t:c.fline.trim(), from:sess.compass, date:today()}));
+  sess.hyps.split('\n').map(x=>x.trim()).filter(Boolean).forEach(h=>DB.hyps.push({t:h, from:sess.compass, date:today(), status:'untested'}));
+  if (S.testingHyp){
+    const h=DB.hyps.find(x=>x.t===S.testingHyp.t);
+    if(h && S.hypResult){ h.status=S.hypResult; }
+    const brk=$('hvWhere').value.trim();
+    if(brk) DB.bank.push({t:brk, from:'hypothesis: '+S.testingHyp.t, date:today()});
+  }
+  DB.boxes[today()]=(DB.boxes[today()]||0)+1;
+  store.save(DB);
+  $('linkBox').value=''; $('hypBox').value=''; $('hvWhere').value='';
+  S.testingHyp=null; $('testing').style.display='none';
+  renderMeta(); show('ph-setup'); window.scrollTo(0,0);
+}
+function logRename(){
+  const v=$('compass').value.trim(); if(!v) return;
+  DB.bank.push({t:'[renamed] '+v, from:'verify-loop', date:today()}); store.save(DB); renderMeta();
+}
+function useCompass(t){ $('compass').value=t.replace(/^\[renamed\]\s*/,''); window.scrollTo(0,0); }
+function deployHyp(idx){
+  S.testingHyp = DB.hyps[idx];
+  $('testing').style.display='block';
+  $('testing').textContent = '⚗ testing: ' + S.testingHyp.t;
+  window.scrollTo(0,0);
+}
+
+// --- library ---
+function tog(el){ el.classList.toggle('on'); renderLib(); }
+function libOn(f){ return document.querySelector(`#libFilters [data-f="${f}"]`).classList.contains('on'); }
+function allLinks(){
+  const out=[];
+  DB.sessions.forEach(s=> (s.links||'').split('\n').map(x=>x.trim()).filter(Boolean).forEach(l=>out.push({t:l, from:s.compass, date:s.date.slice(0,10)})) );
+  return out;
+}
+function allCompasses(){
+  const seen={}, out=[];
+  DB.bank.forEach(b=>{ if(!seen[b.t]){seen[b.t]=1; out.push({t:b.t, from:b.from, date:b.date, src:'bank'});} });
+  DB.sessions.forEach(s=>{ if(s.compass && s.compass!=='(étude)' && !seen[s.compass]){seen[s.compass]=1; out.push({t:s.compass, from:'used in session', date:s.date.slice(0,10), src:'session'});} });
+  return out;
+}
+function allCands(){
+  const out=[];
+  DB.sessions.forEach(s=> (s.cands||[]).forEach(c=>out.push({t:c.t, pk:c.state==='picked', fl:c.flinch, from:s.compass, date:s.date.slice(0,10)})) );
+  return out;
+}
+function renderLib(){
+  const q=($('libSearch').value||'').toLowerCase();
+  const hit=t=>!q||t.toLowerCase().includes(q);
+  let html='';
+  if(libOn('compass')){
+    const cs=allCompasses().filter(x=>hit(x.t)).reverse();
+    html+=`<h3>COMPASSES (${cs.length}) — tap to load</h3>` + (cs.map(c=>`<div class="item compassI" onclick='useCompass(${JSON.stringify(c.t)})'>${esc(c.t)}<div class="meta">${c.date} · ${esc(c.from)}</div></div>`).join('')||'<div class="note">none yet</div>');
+  }
+  if(libOn('hyp')){
+    const hs=DB.hyps.map((h,i)=>({...h,i})).filter(x=>hit(x.t)).reverse();
+    html+=`<h3>HYPOTHESES (${hs.length})</h3>` + (hs.map(h=>`<div class="item hypI ${h.status!=='untested'?h.status:''}">${esc(h.t)}<div class="meta">${h.date} · ${h.status} · from: ${esc(h.from)}</div><div class="acts"><button class="mini" onclick="deployHyp(${h.i})">⚗ test this session</button><button class="mini" onclick='useCompass(${JSON.stringify("deploy: "+h.t)})'>make it the compass</button></div></div>`).join('')||'<div class="note">none yet — they come from the hypotheses box at Link</div>');
+  }
+  if(libOn('link')){
+    const ls=allLinks().filter(x=>hit(x.t)).reverse();
+    html+=`<h3>LINKS (${ls.length})</h3>` + (ls.map(l=>`<div class="item linkI">${esc(l.t)}<div class="meta">${l.date} · ${esc(l.from)}</div></div>`).join('')||'<div class="note">none yet</div>');
+  }
+  if(libOn('cand')){
+    let cs=allCands().filter(x=>hit(x.t));
+    if(!q) cs=cs.filter(c=>c.pk||c.fl); // unfiltered view shows picks & flinches only; search reaches everything
+    cs.reverse();
+    html+=`<h3>FOG — picks ★ & flinches ! (${cs.length})${q?'':' · search reaches all candidates'}</h3>` + (cs.map(c=>`<div class="item candI ${c.pk?'pk':''} ${c.fl?'fl':''}">${c.pk?'★ ':''}${esc(c.t)}<div class="meta">${c.date} · ${esc(c.from)}</div></div>`).join('')||'<div class="note">none yet</div>');
+  }
+  $('libList').innerHTML=html;
+}
+function renderMeta(){
+  const n=DB.boxes[today()]||0;
+  $('boxes').textContent=Array.from({length:5},(_,i)=>i<n?'■':'□').join(' ')+(n>5?' +'+(n-5):'');
+  $('logList').innerHTML=DB.sessions.slice().reverse().slice(0,40).map(s=>`<div class="logItem"><b>${s.how==='finished'?'✔':'◐'} ${esc(s.compass)}</b>${s.tested?`<br><span style="color:var(--blue)">⚗ ${esc(s.tested)} → ${s.testResult||'?'}</span>`:''}<br>${s.date.slice(0,16).replace('T',' ')} · ${s.len}min · ${s.route} · ${(s.cands||[]).length} candidates</div>`).join('')||'<div class="note">No sessions yet.</div>';
+  // setup shortcuts: last 3 compasses + untested hypotheses
+  const lastC=allCompasses().slice(-3).reverse();
+  const openH=DB.hyps.map((h,i)=>({...h,i})).filter(h=>h.status==='untested').slice(-3).reverse();
+  let s='';
+  if(lastC.length) s+='<h3>RECENT COMPASSES — tap to load</h3>'+lastC.map(c=>`<div class="item compassI" onclick='useCompass(${JSON.stringify(c.t)})'>${esc(c.t)}</div>`).join('');
+  if(openH.length) s+='<h3>UNTESTED HYPOTHESES</h3>'+openH.map(h=>`<div class="item hypI">${esc(h.t)}<div class="acts"><button class="mini" onclick="deployHyp(${h.i})">⚗ test this session</button></div></div>`).join('');
+  s+='<div class="note" style="margin-top:10px">Full collection → LIBRARY tab below.</div>';
+  $('setupPicks').innerHTML=s;
+}
+function showPane(name,el){
+  document.querySelectorAll('.pane').forEach(p=>p.classList.remove('on'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
+  $('pane-'+name).classList.add('on'); el.classList.add('on');
+}
+function exportMd(){
+  let md='# Loop export — '+today()+'\n\n## Compass bank\n';
+  DB.bank.forEach(b=>md+=`- ${b.t}  _(from: ${b.from}, ${b.date})_\n`);
+  md+='\n## Hypotheses\n';
+  DB.hyps.forEach(h=>md+=`- [${h.status}] ${h.t}  _(from: ${h.from}, ${h.date})_\n`);
+  md+='\n## Links\n';
+  allLinks().forEach(l=>md+=`- ${l.t}  _(${l.date})_\n`);
+  md+='\n## Sessions\n';
+  DB.sessions.forEach(s=>{
+    md+=`\n### ${s.date.slice(0,16).replace('T',' ')} · ${s.how} · ${s.len}min · ${s.route}\n**Compass:** ${s.compass}\n`;
+    if(s.tested) md+=`**Tested:** ${s.tested} → ${s.testResult||'?'}\n`;
+    (s.cands||[]).forEach(c=>md+=`- ${c.state==='picked'?'★ ':c.state==='killed'?'✕ ':''}${c.t}${c.fline?'  → fails when: '+c.fline:''}\n`);
+    if(s.links) md+=`**Links:**\n${s.links}\n`;
+    if(s.hyps) md+=`**Hypotheses:**\n${s.hyps}\n`;
+  });
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([md],{type:'text/markdown'}));
+  a.download=`loop_export_${today()}.md`; a.click();
+}
+renderMeta();
+</script>
+</body>
+</html>
