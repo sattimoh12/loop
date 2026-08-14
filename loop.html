@@ -32,6 +32,7 @@
   .en.intake { border-color:var(--vio); color:var(--vio); }
   .en.fail { border-color:var(--bad); color:var(--bad); }
   .en.evalE { border-color:var(--good); color:var(--good); }
+  .en.dipE { margin-left:16px; border-left-style:dotted; }
   .en.picked { border-color:var(--good); color:var(--good); font-weight:600; }
   .en.killed { color:var(--dim); text-decoration:line-through; }
   .blurred .en.cand:not(:last-child) { filter:blur(4px); user-select:none; }
@@ -155,7 +156,7 @@
     <span class="chip" style="color:var(--good)" data-p="*">* eval</span>
   </div>
   <input id="inp" placeholder="type… (> wall · ! flinch · = link · < intake · ? hyp · x fails-when)" autocomplete="off">
-  <div class="legend">plain = fog · <b>&gt;</b>wall · <b>=</b>link · <b>&lt;</b>intake · <b>?</b>hyp · <b>!</b>flinch · <b>x </b>fails-when · <b>*</b>eval (a verdict, written)</div>
+  <div class="legend">plain = fog · <b>&gt;</b>wall · <b>=</b>link · <b>&lt;</b>intake · <b>?</b>hyp · <b>!</b>flinch · <b>x </b>fails-when · <b>*</b>eval · <b>~</b>dip (probing one move again)</div>
 </div></div>
 
 <script>
@@ -204,19 +205,20 @@ function parse(v){
 $('inp').addEventListener('keydown',e=>{
   if(e.key!=='Enter') return;
   let v=$('inp').value; if(!v.trim()) return;
-  if(chipPrefix && !/^[>!=<?]|^x\s/i.test(v)) v=chipPrefix+v;
+  if(chipPrefix && !/^[>!=<?~*]|^x\s/i.test(v)) v=chipPrefix+v;
+  let dip=false; if(v.startsWith('~')){ dip=true; v=v.slice(1); }
   const [ty,t]=parse(v); if(!t) return;
-  addEntry(ty,t); $('inp').value='';
+  addEntry(ty,t,dip); $('inp').value='';
 });
 document.querySelectorAll('.chip').forEach(ch=>ch.onclick=()=>{
   document.querySelectorAll('.chip').forEach(c=>c.classList.remove('on'));
   ch.classList.add('on'); chipPrefix=ch.dataset.p.replace('&gt;','>').replace('&lt;','<');
   $('inp').focus();
 });
-function addEntry(ty,t){
+function addEntry(ty,t,dip){
   const now=new Date();
   const e={t,ty,d:today(),tm:String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0'),ts:Date.now(),cx:DB.compass||'',state:'',rev:0};
-  e.sc=SCOPE; if(SCOPE!=='m'){ e.ar=DB.arena; const P=pget(); if(P.cur&&P.cur!=='ALL') e.pj=P.cur; }
+  e.sc=SCOPE; if(dip) e.dip=1; if(SCOPE!=='m'){ e.ar=DB.arena; const P=pget(); if(P.cur&&P.cur!=='ALL') e.pj=P.cur; }
   if(ty==='hyp') e.st='untested';
   if(ty==='wall'){
     if(SCOPE==='m'){ if(DB.modelCompass) DB.compassLogM.push({t:DB.modelCompass,d:today()}); DB.modelCompass=t; }
@@ -273,8 +275,8 @@ function renderStream(){
     const T=TYPES[e.ty]||TYPES.cand;
     let extra='';
     if(e.ty==='hyp') extra=`<div class="acts"><button class="mini" onclick="deploy(${i})">⚗ test</button></div>`;
-    const tag=[T.tag,e.pj||'',e.st&&e.st!=='untested'?e.st.toUpperCase():'',e.tm||''].filter(Boolean).join(' · ');
-    return `<div class="en ${T.cls} ${e.state||''} ${e.st||''}" >${tag?`<span class="tag">${tag}</span>`:''}${esc(e.t)}${extra}</div>`;
+    const tag=[e.dip?'DIP':'',T.tag,e.pj||'',e.st&&e.st!=='untested'?e.st.toUpperCase():'',e.tm||''].filter(Boolean).join(' · ');
+    return `<div class="en ${T.cls} ${e.state||''} ${e.st||''} ${e.dip?'dipE':''}" >${tag?`<span class="tag">${tag}</span>`:''}${esc(e.t)}${extra}</div>`;
   }).join('');
   $('emptyNote').style.display=DB.entries.length?'none':'block';
   window.scrollTo(0,document.body.scrollHeight);
@@ -317,6 +319,14 @@ function closeBlock(){
     if(!held){ const w=prompt('Broke when… (banks as failure line)'); if(w&&w.trim()) addEntry('fail',w.trim()); }
     testingIdx=null; $('testing').style.display='none';
   }
+  const fin=confirm('Close block:\n\nOK = ✔ finished / solved\nCancel = ◐ parked (wall stays open)');
+  if(!fin){
+    const w=prompt('Park deposit — one line, "stops working when…" (banks as a candidate compass; blank allowed)');
+    if(w&&w.trim()) addEntry('fail',w.trim());
+    const c=SCOPE==='m'?DB.modelCompass:DB.compW[DB.arena].c;
+    if(c) alert('Carry into the gap (read once, then drop it):\n\n'+c);
+  }
+  addEntry('eval', fin?'✔ finished block':'◐ parked block');
   DB.boxes[today()]=(DB.boxes[today()]||0)+1; save(); renderBoxes();
 }
 function renderBoxes(){ const n=DB.boxes[today()]||0; $('boxChip').textContent=Array.from({length:5},(_,i)=>i<n?'■':'□').join(' ')+(n>5?' +'+(n-5):''); }
