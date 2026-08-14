@@ -126,6 +126,7 @@
       <span class="on" data-f="hyp">HYPOTHESES</span><span data-f="cand">FOG</span>
     </div>
     <div id="libList"></div>
+    <div class="ctl" style="margin-top:14px"><button class="btn" onclick="recoverV1()">⟲ Recover old data (from the earlier app version on this device)</button></div>
   </div>
   <div class="pane" id="pane-refs">
     <div class="note">Visual deposits — the native-medium rule made real. <b style="color:var(--ink)">Paste an image (⌘V) anywhere on this tab</b>, or use the button (on iPhone this opens your photo library). Each ref is stamped to the current discipline/project. Images are downscaled to fit local storage.</div>
@@ -395,6 +396,23 @@ function exportMd(){
   a.href=URL.createObjectURL(new Blob([md],{type:'text/markdown'}));
   a.download=`loop_export_${today()}.md`; a.click();
 }
+/* ---- recover: merge old-version data on this device into the current store ---- */
+function recoverV1(){
+  let old=null; try{ old=JSON.parse(localStorage.getItem('loop_v1')); }catch(e){}
+  if(!old){ alert('No earlier-version data found on this device. Old entries live on whichever device/place you typed them — open the app there.'); return; }
+  const have=new Set(DB.entries.map(e=>e.ty+'|'+e.t));
+  let n=0;
+  const put=(t,ty,extra)=>{ if(!t||have.has(ty+'|'+t)) return; DB.entries.push(Object.assign({t,ty,d:extra.d||'',cx:extra.cx||'',ar:DB.arenas[0],state:extra.state||'',rev:1,st:extra.st},{} )); have.add(ty+'|'+t); n++; };
+  (old.bank||[]).forEach(b=>put(b.t.replace(/^\[renamed\]\s*/,''), b.t.startsWith('[renamed]')?'wall':'fail',{d:b.date,cx:b.from}));
+  (old.hyps||[]).forEach(h=>put(h.t,'hyp',{d:h.date,cx:h.from,st:h.status||'untested'}));
+  (old.sessions||[]).forEach(s=>{
+    (s.cands||[]).forEach(c=>put(c.t, c.flinch?'flinch':'cand',{d:(s.date||'').slice(0,10),cx:s.compass,state:c.state}));
+    (s.links||'').split('\n').map(x=>x.trim()).filter(Boolean).forEach(l=>put(l,'link',{d:(s.date||'').slice(0,10),cx:s.compass}));
+  });
+  save(); renderLib(); renderStream();
+  alert('Recovered '+n+' entries from the earlier version on this device.');
+}
+
 /* ---- straight drafts (scene text: stays local, never exported in full) ---- */
 DB.drafts=DB.drafts||[]; let curDraft=null, draftTimer=null;
 function draftsHere(){ const P=pget(); return DB.drafts.map((d,i)=>({d,i})).filter(x=>x.d.ar===DB.arena&&(P.cur==='ALL'||x.d.pj===P.cur||!x.d.pj)); }
