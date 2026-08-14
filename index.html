@@ -295,11 +295,12 @@ function renderCompass(){
   $('arenaChip').textContent='▸ '+DB.arena;
   const P=pget(); $('projChip').textContent='▪ '+(P.cur||'ALL');
 }
-$('compassTxt').addEventListener('blur',()=>{
+function commitCompass(){
   const v=$('compassTxt').textContent.trim();
   if(SCOPE==='m'){ if(v!==DB.modelCompass){ if(DB.modelCompass) DB.compassLogM.push({t:DB.modelCompass,d:today()}); DB.modelCompass=v; save(); } }
   else { const A=DB.compW[DB.arena]; if(v!==A.c){ if(A.c) A.log.push({t:A.c,d:today()}); A.c=v; save(); } }
-});
+}
+$('compassTxt').addEventListener('blur',commitCompass);
 function cycleArena(){
   if(DB.arenas.length<2){ addArena(); return; }
   const i=DB.arenas.indexOf(DB.arena);
@@ -742,11 +743,31 @@ function renderDraft(){
   $('draftTxt').disabled=!D;
   $('draftMeta').textContent=D?`${(D.txt.trim().match(/\S+/g)||[]).length} words · ${D.pj||D.ar}`:'';
 }
+function commitDraft(){
+  if(curDraft===null||!DB.drafts[curDraft]) return;
+  const D=DB.drafts[curDraft], v=$('draftTxt').value;
+  if(D.txt===v) return;
+  D.txt=v; D.up=Date.now();
+  const ok=save();
+  $('draftMeta').textContent=`${(v.trim().match(/\S+/g)||[]).length} words · ${D.pj||D.ar} · ${ok?'saved':'NOT SAVED'}`;
+}
 function autosaveDraft(){
   if(curDraft===null) return;
   clearTimeout(draftTimer);
-  draftTimer=setTimeout(()=>{ const D=DB.drafts[curDraft]; D.txt=$('draftTxt').value; D.up=Date.now(); save(); $('draftMeta').textContent=`${(D.txt.trim().match(/\S+/g)||[]).length} words · ${D.pj||D.ar} · saved`; },600);
+  draftTimer=setTimeout(commitDraft,600);
 }
+/* iOS can suspend or kill a backgrounded web app without warning, and the
+   autosave above is deliberately 600ms behind the keystrokes. Commit anything
+   still waiting the moment we lose the foreground, or that last sentence dies
+   with the app. Same for a compass line still being edited. */
+function flushPending(){
+  clearTimeout(draftTimer);
+  commitCompass();   /* not via blur() — focus can be lost before we get here */
+  commitDraft();
+}
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='hidden') flushPending(); });
+addEventListener('pagehide',flushPending);
+addEventListener('blur',flushPending);
 
 /* ---- visual refs ---- */
 DB.refs=DB.refs||[];
