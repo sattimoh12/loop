@@ -1,1 +1,219 @@
-<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Loop Backup</title><style>body{background:#101014;color:#e8e6e0;font-family:-apple-system,Helvetica,sans-serif;margin:0;padding:20px 16px 60px;line-height:1.5}h1{font-size:15px;letter-spacing:3px;color:#d4a24e}#w{font-size:13px;color:#d4a24e;border:1px solid #d4a24e;border-radius:8px;padding:10px;margin:12px 0}#s{font-size:12px;color:#8a8894;white-space:pre-wrap;font-family:ui-monospace,monospace;margin:12px 0}button{display:block;width:100%;padding:15px;margin:9px 0;background:#1a1a21;color:#e8e6e0;border:1px solid #3a3a44;border-radius:9px;font-size:15px}button.p{border-color:#d4a24e;color:#d4a24e}h2{font-size:11px;letter-spacing:2px;color:#8a8894;margin:26px 0 6px}textarea{width:100%;height:150px;background:#0c0c0e;color:#e8e6e0;border:1px solid #3a3a44;border-radius:8px;font-size:10px;font-family:ui-monospace,monospace;padding:8px}input[type=file]{font-size:13px;color:#8a8894;margin:8px 0}a{color:#6e9fc0}</style></head><body><h1>LOOP BACKUP</h1><div id="w">Checking storage...</div><div id="s"></div><h2>SAVE A BACKUP</h2><button class="p" id="b">RAW BACKUP - save everything</button><button id="c">Show as text to copy</button><h2>RESTORE</h2><input type="file" id="f" accept="application/json,.json,text/plain"><button id="i">IMPORT from file or text below</button><h2>RECOVER OLDER DATA</h2><button id="m">Merge stranded loop_v2 entries</button><textarea id="t" placeholder="Backup text appears here, or paste a backup to import"></textarea><p><a href="./">Back to The Loop</a></p><script>function snap(){var o={},i,k;for(i=0;i<localStorage.length;i++){k=localStorage.key(i);if(k.indexOf("loop")===0){o[k]=localStorage.getItem(k);}}return o;}function payload(){return JSON.stringify({app:"loop",saved:new Date().toISOString(),data:snap()},null,1);}function stat(){var sa=(window.navigator.standalone===true)||(window.matchMedia&&window.matchMedia("(display-mode: standalone)").matches);document.getElementById("w").textContent=sa?"HOME SCREEN APP container - this is the one holding your entries.":"SAFARI BROWSER container. Data saved from the home screen icon will NOT appear here - open this page from that icon instead.";var o=snap(),k,t="",any=false;for(k in o){any=true;var n="?";try{var p=JSON.parse(o[k]);n=(p.entries||[]).length+" entries";}catch(e){n="unreadable";}t+=k+" - "+o[k].length+" chars - "+n+"\n";}document.getElementById("s").textContent=any?t:"No loop data visible in this container.";}document.getElementById("b").onclick=function(){var d=payload(),nm="loop-backup-"+new Date().toISOString().slice(0,10)+".json";try{var fl=new File([d],nm,{type:"application/json"});if(navigator.canShare&&navigator.canShare({files:[fl]})){navigator.share({files:[fl],title:"Loop backup"});return;}}catch(e){}var u=URL.createObjectURL(new Blob([d],{type:"application/json"}));var a=document.createElement("a");a.href=u;a.download=nm;document.body.appendChild(a);a.click();};document.getElementById("c").onclick=function(){var t=document.getElementById("t");t.value=payload();t.focus();t.select();};document.getElementById("i").onclick=function(){var fl=document.getElementById("f").files[0],txt=document.getElementById("t").value;var go=function(s){var o;try{o=JSON.parse(s);}catch(e){alert("Not a valid backup file.");return;}var d=o&&o.data?o.data:o,k,n=0;for(k in d){n++;}if(!n){alert("No loop data in that backup.");return;}if(!confirm("Replace current data with this backup? "+n+" key(s) overwritten."))return;for(k in d){localStorage.setItem(k,d[k]);}alert("Imported. Reopen The Loop.");stat();};if(fl){var r=new FileReader();r.onload=function(){go(String(r.result));};r.readAsText(fl);}else if(txt.trim()){go(txt);}else{alert("Choose a file, or paste backup text in the box.");}};document.getElementById("m").onclick=function(){var a=localStorage.getItem("loop_v2");if(!a){alert("No loop_v2 data in this container.");return;}var A,B;try{A=JSON.parse(a);}catch(e){alert("loop_v2 unreadable.");return;}try{B=JSON.parse(localStorage.getItem("loop_v3")||"{}");}catch(e){B={};}var ae=A.entries||[],be=B.entries||[],seen={},out=[];be.concat(ae).forEach(function(e){var k=JSON.stringify(e);if(!seen[k]){seen[k]=1;out.push(e);}});if(!confirm("Merge "+ae.length+" older into "+be.length+" current? Result "+out.length+". Back up first."))return;B.entries=out;localStorage.setItem("loop_v3",JSON.stringify(B));alert("Merged. Reopen The Loop.");stat();};stat();</script></body></html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Loop Backup</title>
+<style>
+  body{background:#101014;color:#e8e6e0;font-family:-apple-system,Helvetica,sans-serif;margin:0;padding:20px 16px 60px;line-height:1.5}
+  h1{font-size:15px;letter-spacing:3px;color:#d4a24e}
+  h2{font-size:11px;letter-spacing:2px;color:#8a8894;margin:26px 0 6px}
+  .card{border:1px solid #3a3a44;border-radius:9px;padding:11px;margin:12px 0;font-size:13px}
+  .ok{color:#7fbf7f}
+  .bad{color:#ff8080}
+  .warn{color:#d4a24e}
+  #keys{font-size:11px;color:#8a8894;white-space:pre-wrap;font-family:ui-monospace,monospace;margin-top:8px}
+  button{display:block;width:100%;padding:15px;margin:9px 0;background:#1a1a21;color:#e8e6e0;border:1px solid #3a3a44;border-radius:9px;font-size:15px}
+  button.p{border-color:#d4a24e;color:#d4a24e}
+  textarea{width:100%;height:150px;background:#0c0c0e;color:#e8e6e0;border:1px solid #3a3a44;border-radius:8px;font-size:10px;font-family:ui-monospace,monospace;padding:8px;box-sizing:border-box}
+  input[type=file]{font-size:13px;color:#8a8894;margin:8px 0}
+  p.note{color:#8a8894;font-size:12px}
+  a{color:#6e9fc0}
+</style>
+</head>
+<body>
+
+<h1>LOOP BACKUP</h1>
+<div class="card" id="health">Checking storage…</div>
+
+<h2>SAVE A BACKUP</h2>
+<button class="p" id="bJson">RAW BACKUP — save everything</button>
+<button id="bText">Show as text to copy</button>
+<p class="note">If the share sheet does not appear, use “Show as text to copy”, then paste it somewhere safe (Notes, email to yourself).</p>
+
+<h2>RESTORE</h2>
+<input type="file" id="file" accept="application/json,.json,text/plain">
+<button id="bMerge">＋ MERGE into what is here</button>
+<button id="bReplace">⇧ REPLACE everything here</button>
+<p class="note">Merge is the safe one: it keeps current data and adds what is missing. Replace overwrites this container.</p>
+
+<h2>RECOVER OLDER DATA</h2>
+<button id="bV2">⟲ Merge stranded loop_v2 entries</button>
+<p class="note">The app never reads <b>loop_v2</b>, so anything saved there is invisible until merged.</p>
+
+<textarea id="box" placeholder="Backup text appears here, or paste a backup to restore"></textarea>
+<p><a href="./">Back to The Loop</a></p>
+
+<script>
+var $=function(id){return document.getElementById(id)};
+
+function loopKeys(){
+  var o={},i,k;
+  for(i=0;i<localStorage.length;i++){ k=localStorage.key(i); if(k&&k.indexOf('loop')===0) o[k]=localStorage.getItem(k); }
+  return o;
+}
+function payload(){
+  return JSON.stringify({app:'loop',v:3,saved:new Date().toISOString(),data:loopKeys()},null,1);
+}
+/* can this container actually be written to? */
+function probe(){
+  try{
+    var p='loop_probe_'+Date.now();
+    localStorage.setItem(p,'x');
+    var ok=localStorage.getItem(p)==='x';
+    localStorage.removeItem(p);
+    return ok?{ok:true}:{ok:false,why:'the write did not stick — storage is read-only here.'};
+  }catch(e){
+    return {ok:false,why:/quota|exceeded/i.test(e.name+' '+e.message)?'storage is full.':'writes are blocked ('+e.name+') — Private Browsing or a Safari storage setting.'};
+  }
+}
+function health(){
+  var sa=(navigator.standalone===true)||(window.matchMedia&&matchMedia('(display-mode: standalone)').matches);
+  var pr=probe(), keys=loopKeys(), k, rows='', any=false, stamp='never';
+  for(k in keys){
+    any=true;
+    var n='unreadable';
+    try{ var p=JSON.parse(keys[k]); n=((p.entries||[]).length)+' entries'; if(k==='loop_v3'&&p._sv) stamp=new Date(p._sv).toLocaleString(); }catch(e){}
+    rows+=k+' · '+keys[k].length+' chars · '+n+'\n';
+  }
+  $('health').innerHTML=
+    '<div class="'+(sa?'ok':'warn')+'"><b>'+(sa
+      ? 'HOME-SCREEN APP container — this is the one holding your entries.'
+      : 'SAFARI BROWSER container — data typed in the home-screen icon will NOT appear here. Open this page from that icon instead.')+'</b></div>'+
+    '<div class="'+(pr.ok?'ok':'bad')+'" style="margin-top:8px"><b>Writes to this device: '+(pr.ok?'WORKING':'FAILING — '+pr.why)+'</b></div>'+
+    '<div style="margin-top:8px;color:#8a8894">Last app save: '+stamp+'</div>'+
+    '<div id="keys">'+(any?rows:'No Loop data visible in this container.')+'</div>';
+}
+
+/* iOS standalone ignores <a download>, so try the share sheet first and always
+   leave the text in the box as a guaranteed fallback. */
+function deliver(text,name,mime){
+  $('box').value=text;
+  try{
+    var f=new File([text],name,{type:mime});
+    if(navigator.canShare&&navigator.canShare({files:[f]})){
+      navigator.share({files:[f],title:name}).catch(function(){});
+      return;
+    }
+  }catch(e){}
+  try{
+    var u=URL.createObjectURL(new Blob([text],{type:mime}));
+    var a=document.createElement('a');
+    a.href=u; a.download=name; a.rel='noopener';
+    document.body.appendChild(a); a.click();
+    setTimeout(function(){ a.remove(); URL.revokeObjectURL(u); },4000);
+  }catch(e){}
+}
+
+function readBag(s){
+  var o;
+  try{ o=JSON.parse(s); }catch(e){ alert('That is not a readable backup file.'); return null; }
+  var d=(o&&o.data)?o.data:o;
+  if(!d||typeof d!=='object'){ alert('No Loop data found in that backup.'); return null; }
+  if(d.entries) { var w={}; w.loop_v3=JSON.stringify(d); return w; }   /* bare DB object */
+  return d;
+}
+/* merge entries/drafts/refs without duplicating; never drop scene text */
+function mergeInto(cur,inc){
+  var key=function(e){ return [e.ty,e.t,e.d||'',e.tm||'',e.sc||''].join('|') };
+  cur.entries=cur.entries||[];
+  var seen={},added=0;
+  cur.entries.forEach(function(e){ seen[key(e)]=1 });
+  (inc.entries||[]).forEach(function(e){ if(!seen[key(e)]){ seen[key(e)]=1; cur.entries.push(e); added++; } });
+  cur.entries.sort(function(a,b){ return (a.ts||0)-(b.ts||0) });
+
+  cur.compass=cur.compass||inc.compass||'';
+  cur.modelCompass=cur.modelCompass||inc.modelCompass||'';
+  var logMerge=function(a,b){ var s={}; a=a||[]; a.forEach(function(w){s[w.t+'|'+w.d]=1});
+    (b||[]).forEach(function(w){ if(!s[w.t+'|'+w.d]){ s[w.t+'|'+w.d]=1; a.push(w); } }); return a; };
+  cur.compassLog=logMerge(cur.compassLog,inc.compassLog);
+  cur.compassLogM=logMerge(cur.compassLogM,inc.compassLogM);
+
+  cur.arenas=cur.arenas||[];
+  (inc.arenas||[]).forEach(function(a){ if(cur.arenas.indexOf(a)<0) cur.arenas.push(a) });
+  cur.compW=cur.compW||{};
+  Object.keys(inc.compW||{}).forEach(function(a){
+    if(!cur.compW[a]) cur.compW[a]={c:'',log:[]};
+    cur.compW[a].c=cur.compW[a].c||inc.compW[a].c||'';
+    cur.compW[a].log=logMerge(cur.compW[a].log,inc.compW[a].log);
+  });
+  cur.boxes=Object.assign({},inc.boxes||{},cur.boxes||{});
+  cur.proj=Object.assign({},inc.proj||{},cur.proj||{});
+
+  var dk=function(d){ return (d.title||'')+'|'+(d.ar||'') };
+  cur.drafts=cur.drafts||[];
+  (inc.drafts||[]).forEach(function(d){
+    var e=null;
+    cur.drafts.forEach(function(x){ if(dk(x)===dk(d)) e=x });
+    if(!e){ cur.drafts.push(d); added++; return; }
+    var a=e.txt||'', b=d.txt||'';
+    if(a===b||a.indexOf(b)>=0) return;
+    if(b.indexOf(a)>=0){ e.txt=b; e.up=d.up||e.up; return; }
+    var st=d.up?new Date(d.up).toISOString().slice(0,10):'backup';
+    var copy=Object.assign({},d); copy.title=d.title+' ['+st+' backup copy]';
+    cur.drafts.push(copy); added++;
+  });
+
+  cur.refs=cur.refs||[];
+  var rs={}; cur.refs.forEach(function(r){ rs[r.src||r.img||JSON.stringify(r)]=1 });
+  (inc.refs||[]).forEach(function(r){ var k=r.src||r.img||JSON.stringify(r); if(!rs[k]){ rs[k]=1; cur.refs.push(r); added++; } });
+  return added;
+}
+function writeKey(k,v){
+  try{ localStorage.setItem(k,v); }
+  catch(e){ alert('WRITE FAILED for '+k+': '+e.name+'. Nothing was saved. Storage is full or blocked here.'); return false; }
+  if(localStorage.getItem(k)!==v){ alert('WRITE FAILED for '+k+' — it did not stick. Storage is read-only here.'); return false; }
+  return true;
+}
+
+$('bJson').onclick=function(){ deliver(payload(),'loop-backup-'+new Date().toISOString().slice(0,10)+'.json','application/json'); };
+$('bText').onclick=function(){ var b=$('box'); b.value=payload(); b.focus(); b.select(); };
+
+function withSource(fn){
+  var f=$('file').files[0], txt=$('box').value;
+  if(f){ var r=new FileReader(); r.onload=function(){ fn(String(r.result)) }; r.onerror=function(){ alert('Could not read that file.') }; r.readAsText(f); }
+  else if(txt.trim()) fn(txt);
+  else alert('Choose a backup file, or paste backup text into the box.');
+}
+$('bReplace').onclick=function(){
+  withSource(function(s){
+    var bag=readBag(s); if(!bag) return;
+    var keys=Object.keys(bag); if(!keys.length){ alert('No Loop data in that backup.'); return; }
+    if(!confirm('REPLACE everything in this container?\n\n'+keys.length+' key(s) overwritten. Current data here is lost.')) return;
+    var ok=true;
+    keys.forEach(function(k){ if(!writeKey(k,bag[k])) ok=false });
+    if(ok) alert('Restored. Reopen The Loop.');
+    health();
+  });
+};
+$('bMerge').onclick=function(){
+  withSource(function(s){
+    var bag=readBag(s); if(!bag) return;
+    var inc=null,cur={};
+    try{ inc=JSON.parse(bag.loop_v3||bag.loop_v2||bag.loop_v1||'null'); }catch(e){}
+    if(!inc){ alert('That backup has no readable Loop data to merge.'); return; }
+    try{ cur=JSON.parse(localStorage.getItem('loop_v3')||'{}'); }catch(e){ cur={}; }
+    var before=(cur.entries||[]).length;
+    var n=mergeInto(cur,inc);
+    if(!confirm('Merge adds '+n+' item(s). Entries '+before+' → '+cur.entries.length+'.\n\nProceed?')) return;
+    if(writeKey('loop_v3',JSON.stringify(cur))) alert('Merged. Reopen The Loop.');
+    health();
+  });
+};
+$('bV2').onclick=function(){
+  var raw=localStorage.getItem('loop_v2');
+  if(!raw){ alert('No loop_v2 data in this container.'); return; }
+  var inc=null,cur={};
+  try{ inc=JSON.parse(raw); }catch(e){ alert('loop_v2 is present but unreadable.'); return; }
+  try{ cur=JSON.parse(localStorage.getItem('loop_v3')||'{}'); }catch(e){ cur={}; }
+  var before=(cur.entries||[]).length;
+  var n=mergeInto(cur,inc);
+  if(!confirm('Found loop_v2. Merging adds '+n+' item(s). Entries '+before+' → '+cur.entries.length+'.\n\nBack up first. Proceed?')) return;
+  if(writeKey('loop_v3',JSON.stringify(cur))) alert('Merged loop_v2. Reopen The Loop.');
+  health();
+};
+
+health();
+</script>
+</body>
+</html>

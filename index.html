@@ -96,11 +96,12 @@
     <span class="tab" onclick="pane('model',this);renderModel()">MODEL</span>
     <span class="tab" onclick="pane('lib',this);renderLib()">LIBRARY</span>
     <span class="tab" onclick="pane('refs',this);renderRefs()">REFS</span>
-    <span class="tab" onclick="exportMd()">EXPORT ↓</span>
+    <span class="tab" onclick="pane('data',this);renderData()">DATA</span>
   </div>
 
   <div class="pane on" id="pane-stream">
     <div id="bigTimer" style="display:none;text-align:center;font-size:52px;font-variant-numeric:tabular-nums;letter-spacing:2px;padding:14px 0 4px;color:var(--ink)"></div>
+    <div class="note" id="hiddenNote" style="display:none;border:1px solid var(--acc);border-radius:8px;padding:9px 11px;margin:0 0 10px"></div>
     <div class="stream" id="stream"></div>
     <div class="note" id="emptyNote">One box. Type anything, Enter banks it. Prefixes switch type instantly — or tap a chip. A <b style="color:var(--acc)">&gt;wall</b> line updates the compass mid-flow without breaking it.</div>
   </div>
@@ -135,6 +136,35 @@
       <label class="btn" style="cursor:pointer">＋ add image<input type="file" accept="image/*" style="display:none" onchange="addRefFile(this)"></label>
     </div>
     <div id="refGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-top:8px"></div>
+  </div>
+  <div class="pane" id="pane-data">
+    <div class="note">Everything on this screen acts on <b style="color:var(--ink)">this app container only</b>. On iPhone a Home-Screen icon has its own storage, separate from Safari — so back up from the same place you type.</div>
+
+    <div id="dataHealth" style="border:1px solid var(--line);border-radius:10px;padding:12px;margin:12px 0;font-size:13px;line-height:1.6"></div>
+
+    <h3 style="font-size:11px;letter-spacing:2px;color:var(--dim);margin:22px 0 6px">BACK UP</h3>
+    <div class="ctl">
+      <button class="btn" onclick="backupJson()">⇩ FULL BACKUP (.json — everything)</button>
+      <button class="btn" onclick="backupText()">Show as text to copy</button>
+      <button class="btn" onclick="exportMd()">Readable digest (.md)</button>
+    </div>
+    <div class="note">The .json is the one that can be restored. The .md is for reading, and it leaves out scene text by design.</div>
+
+    <h3 style="font-size:11px;letter-spacing:2px;color:var(--dim);margin:22px 0 6px">RESTORE</h3>
+    <div class="ctl">
+      <label class="btn" style="cursor:pointer">choose backup file…<input type="file" id="dataFile" accept="application/json,.json,text/plain" style="display:none" onchange="renderData()"></label>
+      <button class="btn" onclick="restore('merge')">＋ MERGE into current</button>
+      <button class="btn" onclick="restore('replace')">⇧ REPLACE current</button>
+    </div>
+    <div class="note">Merge keeps what is here and adds what is missing — the safe default. Replace overwrites everything in this container.</div>
+    <textarea id="dataBox" placeholder="Backup text appears here, or paste a backup to restore" style="width:100%;height:150px;background:var(--panel);border:1px solid var(--line);border-radius:8px;color:var(--ink);font-size:10px;font-family:ui-monospace,monospace;padding:8px;margin-top:8px"></textarea>
+
+    <h3 style="font-size:11px;letter-spacing:2px;color:var(--dim);margin:22px 0 6px">RECOVER OLDER DATA</h3>
+    <div class="ctl">
+      <button class="btn" onclick="recoverV1()">⟲ Merge loop_v1</button>
+      <button class="btn" onclick="recoverOld('loop_v2')">⟲ Merge stranded loop_v2</button>
+    </div>
+    <div class="note">Earlier versions of the app wrote to other keys. Nothing reads <b>loop_v2</b> during normal use, so anything saved there is invisible until merged.</div>
   </div>
   <div id="refView" onclick="this.style.display='none'" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:99;align-items:center;justify-content:center;flex-direction:column;padding:20px">
     <img id="refViewImg" style="max-width:100%;max-height:82vh;border-radius:8px">
@@ -185,7 +215,38 @@ if(!DB.compW){ DB.compW={}; DB.compW[DB.arenas[0]]={c:DB.compass||'',log:DB.comp
 DB.arenas.forEach(a=>{ if(!DB.compW[a]) DB.compW[a]={c:'',log:[]}; });
 DB.entries.forEach(e=>{ if(e.sc!=='m' && !e.ar) e.ar=DB.arenas[0]; });
 let SCOPE='w';
-const save=()=>localStorage.setItem(K,JSON.stringify(DB));
+/* ---- save: never fail silently ----
+   iOS Private Browsing and a full quota both make setItem throw. Previously that
+   exception escaped mid-write, so the entry lived only in memory and vanished on
+   reload with nothing shown to the user. Now every write is verified by reading
+   back, and a failure is loud and persistent. */
+let SAVE_OK=true;
+function saveWarn(msg){
+  SAVE_OK=false;
+  let b=document.getElementById('saveWarn');
+  if(!b){
+    b=document.createElement('div'); b.id='saveWarn';
+    b.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:9999;background:#5a1a1a;color:#ffdede;font:13px/1.45 -apple-system,Helvetica,sans-serif;padding:12px 16px;border-top:1px solid #a04040';
+    document.body.appendChild(b);
+  }
+  b.textContent='⚠ NOT SAVED TO THIS DEVICE — '+msg+' Your typing is only in memory and will be lost if you close the app. Open DATA and use RAW BACKUP now.';
+}
+function save(){
+  DB._sv=Date.now();
+  let s;
+  try{ s=JSON.stringify(DB); }
+  catch(e){ saveWarn('the data could not be serialised ('+e.name+').'); return false; }
+  try{ localStorage.setItem(K,s); }
+  catch(e){
+    const quota=/quota|exceeded/i.test(e.name+' '+e.message);
+    saveWarn(quota?'device storage is full.':'storage is blocked ('+e.name+') — Private Browsing or a Safari content/storage setting.');
+    return false;
+  }
+  /* setItem can succeed and still store nothing in some locked-down modes */
+  if(localStorage.getItem(K)!==s){ saveWarn('the write did not stick (storage is read-only here).'); return false; }
+  if(!SAVE_OK){ SAVE_OK=true; const b=document.getElementById('saveWarn'); if(b) b.remove(); }
+  return true;
+}
 const today=()=>new Date().toISOString().slice(0,10);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 let chipPrefix='', timer={len:0,rem:0,id:null}, testingIdx=null;
@@ -267,17 +328,44 @@ function addProject(){
   P.cur=n; save(); renderCompass(); renderStream();
 }
 
+/* When the discipline/project filters hide entries, say so. Silently showing an
+   empty stream while the data sits in storage is indistinguishable from data loss. */
+let SHOWALL=false;
+function toggleShowAll(){ SHOWALL=!SHOWALL; renderStream(); }
 function renderStream(){
   const P=pget();
-  const recent=DB.entries.filter(e=>e.sc!=='m'&&(e.ar||DB.arenas[0])===DB.arena&&(P.cur==='ALL'||e.pj===P.cur)).slice(-60);
+  const work=DB.entries.filter(e=>e.sc!=='m');
+  const inView=e=>(e.ar||DB.arenas[0])===DB.arena&&(P.cur==='ALL'||e.pj===P.cur);
+  const sel=SHOWALL?work:work.filter(inView);
+  const recent=sel.slice(-60);
   $('stream').innerHTML=recent.map((e)=>{
     const i=DB.entries.indexOf(e);
     const T=TYPES[e.ty]||TYPES.cand;
     let extra='';
     if(e.ty==='hyp') extra=`<div class="acts"><button class="mini" onclick="deploy(${i})">⚗ test</button></div>`;
-    const tag=[e.dip?'DIP':'',T.tag,e.pj||'',e.st&&e.st!=='untested'?e.st.toUpperCase():'',e.tm||''].filter(Boolean).join(' · ');
+    const tag=[e.dip?'DIP':'',T.tag,SHOWALL&&!inView(e)?(e.ar||DB.arenas[0]):'',e.pj||'',e.st&&e.st!=='untested'?e.st.toUpperCase():'',e.tm||''].filter(Boolean).join(' · ');
     return `<div class="en ${T.cls} ${e.state||''} ${e.st||''} ${e.dip?'dipE':''}" >${tag?`<span class="tag">${tag}</span>`:''}${esc(e.t)}${extra}</div>`;
   }).join('');
+
+  /* Report every reason an entry is off-screen, and count them together —
+     naming only one reason undercounts and reads as data loss all over again. */
+  const hidden=work.length-sel.length, capped=sel.length-recent.length, off=hidden+capped;
+  const N=$('hiddenNote');
+  if(off>0){
+    const why=[];
+    if(!SHOWALL && work.some(e=>(e.ar||DB.arenas[0])!==DB.arena)) why.push('discipline '+esc(DB.arena));
+    if(!SHOWALL && P.cur!=='ALL') why.push('project '+esc(P.cur));
+    if(capped>0) why.push('the latest-60 limit');
+    N.style.display='block';
+    N.innerHTML='<b>'+off+' more entr'+(off===1?'y is':'ies are')+' saved but off-screen</b>'+
+      (why.length?' — '+why.join(' · '):'')+
+      ' · <b style="cursor:pointer;color:var(--acc)" onclick="toggleShowAll()">'+
+      (SHOWALL?'back to '+esc(DB.arena):'show everything')+'</b>';
+  } else if(SHOWALL){
+    N.style.display='block';
+    N.innerHTML='Showing all '+work.length+' entries across every discipline · <b style="cursor:pointer;color:var(--acc)" onclick="toggleShowAll()">back to '+esc(DB.arena)+'</b>';
+  } else N.style.display='none';
+
   $('emptyNote').style.display=DB.entries.length?'none':'block';
   window.scrollTo(0,document.body.scrollHeight);
 }
@@ -391,20 +479,232 @@ function copyBank(){
   else prompt('Copy this:',md);
 }
 
-function exportMd(){
-  let md='# Loop export — '+today()+'\n\n**Active compass:** '+(DB.compass||'—')+'\n';
-  const by=ty=>DB.entries.filter(e=>e.ty===ty);
-  md+='\n## Walls\n'; by('wall').concat(DB.compassLog.map(w=>({t:w.t,d:w.d}))).forEach(e=>md+=`- ${e.t} _(${e.d||''})_\n`);
-  md+='\n## Failure lines\n'; by('fail').forEach(e=>md+=`- ${e.t} _(${e.d} · ${e.cx||''})_\n`);
-  md+='\n## Links\n'; by('link').forEach(e=>md+=`- ${e.t} _(${e.d})_\n`);
-  md+='\n## Intake links\n'; by('intake').forEach(e=>md+=`- ${e.t} _(${e.d})_\n`);
-  md+='\n## Hypotheses\n'; by('hyp').forEach(e=>md+=`- [${e.st}] ${e.t} _(${e.d})_\n`);
-  md+='\n## Straight drafts (titles only — scene text never leaves the device)\n';
-  (DB.drafts||[]).forEach(D=>md+=`- ${D.title} — ${(D.txt.trim().match(/\S+/g)||[]).length} words _(${D.pj||D.ar}, updated ${new Date(D.up).toISOString().slice(0,10)})_\n`);
-  md+='\n## Candidates & flinches\n'; DB.entries.filter(e=>e.ty==='cand'||e.ty==='flinch').forEach(e=>md+=`- ${e.state==='picked'?'★ ':e.state==='killed'?'✕ ':''}${e.t} _(${e.d} · ${e.cx||''})_\n`);
+/* ================= DATA: backup, restore, export =================
+   backupJson() is the real backup — every localStorage key starting with
+   "loop", verbatim. exportMd() is a readable digest and is NOT restorable;
+   it deliberately omits raw scene text and image data. */
+
+function deliver(text,name,mime){
+  /* iOS standalone (home-screen) ignores <a download>, so share a File first. */
+  try{
+    const f=new File([text],name,{type:mime});
+    if(navigator.canShare&&navigator.canShare({files:[f]})){
+      navigator.share({files:[f],title:name}).catch(()=>{});
+      return;
+    }
+  }catch(e){}
+  const u=URL.createObjectURL(new Blob([text],{type:mime}));
   const a=document.createElement('a');
-  a.href=URL.createObjectURL(new Blob([md],{type:'text/markdown'}));
-  a.download=`loop_export_${today()}.md`; a.click();
+  a.href=u; a.download=name; a.rel='noopener';
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{ a.remove(); URL.revokeObjectURL(u); },4000);
+  const box=$('dataBox');
+  if(box){ box.value=text; }
+}
+function loopKeys(){
+  const o={};
+  for(let i=0;i<localStorage.length;i++){
+    const k=localStorage.key(i);
+    if(k&&k.indexOf('loop')===0) o[k]=localStorage.getItem(k);
+  }
+  return o;
+}
+function backupPayload(){
+  save(); /* flush memory to storage so the dump is current */
+  return JSON.stringify({app:'loop',v:3,saved:new Date().toISOString(),data:loopKeys()},null,1);
+}
+function backupJson(){
+  deliver(backupPayload(),'loop-backup-'+today()+'.json','application/json');
+}
+function backupText(){
+  const b=$('dataBox'); b.value=backupPayload(); b.focus(); b.select();
+}
+
+/* merge two DB objects; b wins on scalars only where a is empty */
+function mergeDB(cur,inc){
+  const key=e=>[e.ty,e.t,e.d||'',e.tm||'',e.sc||''].join('|');
+  const seen=new Set((cur.entries||[]).map(key));
+  let added=0;
+  (inc.entries||[]).forEach(e=>{ if(!seen.has(key(e))){ seen.add(key(e)); cur.entries.push(e); added++; } });
+  cur.entries.sort((x,y)=>(x.ts||0)-(y.ts||0));
+
+  cur.compass=cur.compass||inc.compass||'';
+  cur.modelCompass=cur.modelCompass||inc.modelCompass||'';
+  const logMerge=(a,b)=>{ const s=new Set((a||[]).map(w=>w.t+'|'+w.d)); (b||[]).forEach(w=>{ if(!s.has(w.t+'|'+w.d)){ s.add(w.t+'|'+w.d); a.push(w); } }); return a; };
+  cur.compassLog=logMerge(cur.compassLog||[],inc.compassLog);
+  cur.compassLogM=logMerge(cur.compassLogM||[],inc.compassLogM);
+
+  (inc.arenas||[]).forEach(a=>{ if(cur.arenas.indexOf(a)<0) cur.arenas.push(a); });
+  cur.compW=cur.compW||{};
+  Object.keys(inc.compW||{}).forEach(a=>{
+    if(!cur.compW[a]) cur.compW[a]={c:'',log:[]};
+    cur.compW[a].c=cur.compW[a].c||inc.compW[a].c||'';
+    cur.compW[a].log=logMerge(cur.compW[a].log||[],inc.compW[a].log);
+  });
+
+  cur.boxes=Object.assign({},inc.boxes||{},cur.boxes||{});
+  cur.proj=Object.assign({},inc.proj||{},cur.proj||{});
+
+  /* Drafts hold the only copy of the actual prose, so a merge must never
+     silently drop scene text. Identical or contained text collapses; genuinely
+     divergent text is kept as a second dated draft for the user to reconcile. */
+  const dk=d=>(d.title||'')+'|'+(d.ar||'');
+  cur.drafts=cur.drafts||[];
+  (inc.drafts||[]).forEach(d=>{
+    const e=cur.drafts.find(x=>dk(x)===dk(d));
+    if(!e){ cur.drafts.push(d); added++; return; }
+    const a=(e.txt||''), b=(d.txt||'');
+    if(a===b||a.indexOf(b)>=0) return;               /* incoming adds nothing */
+    if(b.indexOf(a)>=0){ e.txt=b; e.up=d.up||e.up; return; }  /* strict superset */
+    const stamp=d.up?new Date(d.up).toISOString().slice(0,10):'backup';
+    cur.drafts.push(Object.assign({},d,{title:d.title+' ['+stamp+' backup copy]'}));
+    added++;
+  });
+
+  const rs=new Set((cur.refs||[]).map(r=>r.src||r.img||JSON.stringify(r)));
+  cur.refs=cur.refs||[];
+  (inc.refs||[]).forEach(r=>{ const k=r.src||r.img||JSON.stringify(r); if(!rs.has(k)){ rs.add(k); cur.refs.push(r); added++; } });
+  return added;
+}
+
+function restore(mode){
+  const f=$('dataFile').files[0], txt=$('dataBox').value;
+  const go=s=>{
+    let o; try{ o=JSON.parse(s); }catch(e){ alert('That is not a readable backup file.'); return; }
+    const d=(o&&o.data)?o.data:o;
+    if(!d||typeof d!=='object'){ alert('No Loop data found in that backup.'); return; }
+    /* a bare DB object (not a keyed dump) — treat as loop_v3 */
+    const bag=d.entries?{loop_v3:JSON.stringify(d)}:d;
+    const keys=Object.keys(bag);
+    if(!keys.length){ alert('No Loop data found in that backup.'); return; }
+
+    if(mode==='replace'){
+      if(!confirm('REPLACE everything in this container with the backup?\n\n'+keys.length+' key(s) overwritten. Current data here is lost.')) return;
+      keys.forEach(k=>{ try{ localStorage.setItem(k,bag[k]); }catch(e){ alert('Write failed: '+e.name); } });
+      alert('Restored. The app will now reload.');
+      location.reload(); return;
+    }
+    let inc=null; try{ inc=JSON.parse(bag.loop_v3||bag.loop_v2||bag.loop_v1||'null'); }catch(e){}
+    if(!inc){ alert('That backup has no readable loop_v3 data to merge.'); return; }
+    const before=DB.entries.length;
+    const n=mergeDB(DB,inc);
+    if(!confirm('Merge added '+n+' item(s). Entries '+before+' → '+DB.entries.length+'.\n\nKeep this result?')){ location.reload(); return; }
+    if(save()){ alert('Merged and saved.'); location.reload(); }
+    else alert('Merged in memory but the SAVE FAILED — see the warning bar.');
+  };
+  if(f){ const r=new FileReader(); r.onload=()=>go(String(r.result)); r.onerror=()=>alert('Could not read that file.'); r.readAsText(f); }
+  else if(txt.trim()) go(txt);
+  else alert('Choose a backup file, or paste backup text into the box.');
+}
+
+/* merge a stranded older key (loop_v2) that nothing else reads */
+function recoverOld(k){
+  const raw=localStorage.getItem(k);
+  if(!raw){ alert('No '+k+' data in this container.'); return; }
+  let inc=null; try{ inc=JSON.parse(raw); }catch(e){ alert(k+' is present but unreadable.'); return; }
+  const before=DB.entries.length;
+  const n=mergeDB(DB,inc);
+  if(!confirm('Found '+k+'. Merging adds '+n+' item(s). Entries '+before+' → '+DB.entries.length+'.\n\nProceed?')){ location.reload(); return; }
+  if(save()){ alert('Merged '+k+'.'); location.reload(); }
+  else alert('Merged in memory but the SAVE FAILED — see the warning bar.');
+}
+
+/* storage health — answers "is my typing actually reaching this device?" */
+function storageProbe(){
+  try{
+    const p='loop_probe_'+Date.now(), v='x';
+    localStorage.setItem(p,v);
+    const ok=localStorage.getItem(p)===v;
+    localStorage.removeItem(p);
+    return ok?{ok:true}:{ok:false,why:'the write did not stick — storage is read-only in this container.'};
+  }catch(e){
+    return {ok:false,why:/quota|exceeded/i.test(e.name+' '+e.message)?'storage is full.':'writes are blocked ('+e.name+') — Private Browsing or a Safari storage setting.'};
+  }
+}
+function renderData(){
+  const standalone=(navigator.standalone===true)||(matchMedia&&matchMedia('(display-mode: standalone)').matches);
+  const probe=storageProbe();
+  const keys=loopKeys();
+  let rows='';
+  Object.keys(keys).sort().forEach(k=>{
+    let n='unreadable';
+    try{ const p=JSON.parse(keys[k]); n=((p.entries||[]).length)+' entries'; }catch(e){}
+    rows+='<div style="font-family:ui-monospace,monospace;font-size:11px;color:var(--dim)">'+esc(k)+(k===K?'  ← in use':'')+' · '+keys[k].length+' chars · '+n+'</div>';
+  });
+  if(!rows) rows='<div style="color:var(--dim)">No Loop data visible in this container.</div>';
+  const f=$('dataFile').files[0];
+  const last=DB._sv?new Date(DB._sv).toLocaleString():'never';
+  $('dataHealth').innerHTML=
+    '<div style="color:'+(standalone?'var(--good)':'var(--acc)')+'"><b>'+(standalone
+      ? 'HOME-SCREEN APP container — this is the one holding your entries.'
+      : 'SAFARI BROWSER container — data typed in the home-screen icon will NOT be here.')+'</b></div>'+
+    '<div style="margin-top:8px;color:'+(probe.ok?'var(--good)':'#ff8080')+'"><b>Writes to this device: '+(probe.ok?'WORKING':'FAILING — '+probe.why)+'</b></div>'+
+    '<div style="margin-top:8px;color:var(--dim)">Last successful save: '+esc(last)+'</div>'+
+    '<div style="margin-top:8px">'+rows+'</div>'+
+    (f?'<div style="margin-top:8px;color:var(--good)">Selected file: '+esc(f.name)+'</div>':'');
+}
+
+function exportMd(){
+  const D=DB, dim=s=>s||'—';
+  let md='# Loop export — '+today()+'\n';
+  md+='\n_Readable digest. This file cannot be restored — use FULL BACKUP (.json) for that._\n';
+  md+='\n**Discipline:** '+dim(D.arena)+'  ·  **Disciplines:** '+(D.arenas||[]).join(', ');
+  md+='\n**Entries:** '+(D.entries||[]).length+'  ·  **Drafts:** '+(D.drafts||[]).length+'  ·  **Refs:** '+(D.refs||[]).length+'\n';
+
+  md+='\n## Compasses by discipline\n';
+  (D.arenas||[]).forEach(a=>{
+    const A=(D.compW||{})[a]||{};
+    md+='\n### '+a+'\n- **now:** '+dim(A.c)+'\n';
+    (A.log||[]).forEach(w=>md+='  - _was:_ '+w.t+' _('+(w.d||'')+')_\n');
+  });
+  md+='\n### Model-compass\n- **now:** '+dim(D.modelCompass)+'\n';
+  (D.compassLogM||[]).forEach(w=>md+='  - _was:_ '+w.t+' _('+(w.d||'')+')_\n');
+  if((D.compassLog||[]).length){
+    md+='\n### Legacy compass history\n';
+    (D.compassLog||[]).forEach(w=>md+='- '+w.t+' _('+(w.d||'')+')_\n');
+  }
+
+  const line=e=>'- '+(e.state==='picked'?'★ ':e.state==='killed'?'✕ ':'')+(e.dip?'~ ':'')+e.t+
+    ' _('+[e.d,e.tm,e.ar,e.pj,e.st,e.cx&&('compass: '+e.cx)].filter(Boolean).join(' · ')+')_\n';
+  const LABEL={wall:'Walls',fail:'Failure lines',link:'Links',intake:'Intake',hyp:'Hypotheses',
+               cand:'Fog / candidates',flinch:'Flinches',eval:'Evals'};
+
+  md+='\n## Working stream\n';
+  Object.keys(LABEL).forEach(ty=>{
+    const rows=(D.entries||[]).filter(e=>e.ty===ty&&e.sc!=='m');
+    md+='\n### '+LABEL[ty]+' ('+rows.length+')\n';
+    md+=rows.length?rows.map(line).join(''):'_none_\n';
+  });
+  const other=(D.entries||[]).filter(e=>e.sc!=='m'&&!LABEL[e.ty]);
+  if(other.length){ md+='\n### Other ('+other.length+')\n'+other.map(e=>'- ('+e.ty+') '+e.t+'\n').join(''); }
+
+  const mEntries=(D.entries||[]).filter(e=>e.sc==='m');
+  md+='\n## Model stream ('+mEntries.length+')\n';
+  md+=mEntries.length?mEntries.map(e=>'- ('+e.ty+') '+e.t+' _('+[e.d,e.tm].filter(Boolean).join(' ')+')_\n').join(''):'_none_\n';
+
+  md+='\n## Projects\n';
+  const P=D.proj||{};
+  Object.keys(P).forEach(a=>{
+    const p=P[a]||{};
+    md+='- **'+a+'** — current: '+dim(p.cur)+((p.list||[]).length?' · all: '+p.list.join(', '):'')+'\n';
+  });
+  if(!Object.keys(P).length) md+='_none_\n';
+
+  md+='\n## Boxes\n';
+  const B=D.boxes||{};
+  Object.keys(B).forEach(k=>md+='- **'+k+'**: '+(typeof B[k]==='string'?B[k]:JSON.stringify(B[k]))+'\n');
+  if(!Object.keys(B).length) md+='_none_\n';
+
+  md+='\n## Straight drafts (titles and counts only — scene text stays on the device)\n';
+  (D.drafts||[]).forEach(dr=>md+='- '+dr.title+' — '+((dr.txt||'').trim().match(/\S+/g)||[]).length+' words _('+
+    (dr.pj||dr.ar||'')+(dr.up?', updated '+new Date(dr.up).toISOString().slice(0,10):'')+')_\n');
+  if(!(D.drafts||[]).length) md+='_none_\n';
+
+  md+='\n## Refs (image data excluded — it is in the .json backup)\n';
+  (D.refs||[]).forEach(r=>md+='- '+(r.cap||r.note||'(untitled)')+' _('+[r.ar,r.pj,r.d].filter(Boolean).join(' · ')+')_\n');
+  if(!(D.refs||[]).length) md+='_none_\n';
+
+  deliver(md,'loop_export_'+today()+'.md','text/markdown');
 }
 /* ---- recover: merge old-version data on this device into the current store ---- */
 function recoverV1(){
@@ -465,7 +765,7 @@ function saveRef(dataUrl){
   const cap=prompt('Caption / what it connects to? (optional)')||'';
   const P=pget();
   DB.refs.push({img:dataUrl, t:cap, ar:DB.arena, pj:(P.cur!=='ALL'?P.cur:''), d:today()});
-  try{ save(); }catch(e){ DB.refs.pop(); alert('Storage full — delete some refs or export first.'); return; }
+  if(!save()){ DB.refs.pop(); save(); alert('Could not store that image — storage is full or blocked. Delete some refs, or back up first.'); return; }
   if(cap) addEntry('link','[ref] '+cap);
   renderRefs();
 }
