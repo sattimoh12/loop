@@ -69,6 +69,16 @@
   .filterRow { display:flex; gap:10px; font-size:11px; color:var(--dim); flex-wrap:wrap; margin-bottom:4px; }
   .filterRow span { cursor:pointer; } .filterRow span.on { color:var(--acc); }
   .acts { margin-top:5px; display:flex; gap:6px; }
+  /* solved walls + probe */
+  .en.solvedE { border-color:var(--good); }
+  .en.solvedE .res { display:block; margin-top:4px; color:var(--good); font-weight:600; }
+  .modal { position:fixed; inset:0; background:rgba(0,0,0,.92); z-index:100; display:none; align-items:flex-start; justify-content:center; padding:26px 14px; overflow-y:auto; }
+  .modal.on { display:flex; }
+  .mcard { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:18px; width:100%; max-width:560px; }
+  .mcard input { width:100%; background:var(--bg); border:1px solid var(--line); border-radius:8px; color:var(--ink); font-size:16px; padding:11px 13px; outline:none; font-family:inherit; margin:8px 0 2px; }
+  .mcard .q { font-size:11px; letter-spacing:2px; color:var(--acc); margin-top:12px; }
+  .mwall { border-left:2px solid var(--acc); background:rgba(212,162,78,.06); color:var(--acc); padding:9px 11px; border-radius:0 6px 6px 0; font-size:15px; line-height:1.4; }
+  .mwarn { font-size:12px; color:var(--bad); line-height:1.5; margin-top:8px; min-height:1px; }
 </style>
 </head>
 <body>
@@ -126,8 +136,11 @@
       <span class="on" data-f="wall">WALLS</span><span class="on" data-f="fail">FAILURE LINES</span>
       <span class="on" data-f="link">LINKS</span><span class="on" data-f="intake">INTAKE</span>
       <span class="on" data-f="hyp">HYPOTHESES</span><span data-f="cand">FOG</span>
+      <span class="on" data-f="solved">SOLVED ELSEWHERE</span>
     </div>
+    <div class="ctl"><button class="btn" onclick="solvedOpen()">＋ log a wall solved elsewhere</button></div>
     <div id="libList"></div>
+    <div id="probeLog"></div>
     <div class="ctl" style="margin-top:14px"><button class="btn" onclick="recoverV1()">⟲ Recover old data (from the earlier app version on this device)</button></div>
   </div>
   <div class="pane" id="pane-refs">
@@ -165,6 +178,46 @@
       <button class="btn" onclick="recoverOld('loop_v2')">⟲ Merge stranded loop_v2</button>
     </div>
     <div class="note">Earlier versions of the app wrote to other keys. Nothing reads <b>loop_v2</b> during normal use, so anything saved there is invisible until merged.</div>
+  </div>
+  <div class="modal" id="probe">
+    <div class="mcard">
+      <div class="mwall" id="pbWall"></div>
+      <div id="pbS1">
+        <div class="q">NAME A DOMAIN WHERE THIS IS ALREADY SOLVED</div>
+        <input id="pbAns" placeholder="chess · diplomacy · resignation law…" autocomplete="off" onkeydown="if(event.key==='Enter')probeAnswer(false)">
+        <div class="note">Cold. Nothing is shown until you commit — a cued answer is not a retrieval.</div>
+        <div class="ctl">
+          <button class="btn primary" onclick="probeAnswer(false)">commit</button>
+          <button class="btn" onclick="probeAnswer(true)">nothing comes</button>
+          <button class="btn" onclick="probeClose()">close</button>
+        </div>
+      </div>
+      <div id="pbS2" style="display:none">
+        <div class="q">STATE THE CONFLICT SHAPE — NOUN-FREE</div>
+        <input id="pbShape" list="pbShapes" placeholder="every available move signals a disqualifying trait" autocomplete="off" onkeydown="if(event.key==='Enter')probeReveal()">
+        <datalist id="pbShapes"></datalist>
+        <div class="note">Reuse one you have written, or write a new one. Matching is exact — this app never decides that two sentences are the same.</div>
+        <div class="ctl"><button class="btn primary" onclick="probeReveal()">reveal</button><button class="btn" onclick="probeClose()">close</button></div>
+      </div>
+      <div id="pbS3" style="display:none">
+        <div id="pbOut"></div>
+        <div class="ctl"><button class="btn" onclick="probeClose()">done</button></div>
+      </div>
+    </div>
+  </div>
+  <div class="modal" id="solved">
+    <div class="mcard">
+      <div class="q">THE CONFLICT — NOUN-FREE</div>
+      <input id="svShape" list="svShapes" placeholder="an agent must terminate a relation, and every termination signals one of two disqualifying dispositions" autocomplete="off">
+      <datalist id="svShapes"></datalist>
+      <div class="q">THE DOMAIN IT WAS SOLVED IN</div>
+      <input id="svDom" placeholder="chess · diplomacy · employment law · liturgy" autocomplete="off">
+      <div class="q">THE RESOLUTION SHAPE</div>
+      <input id="svRes" placeholder="remove the agent's authorship of the termination" autocomplete="off">
+      <div class="mwarn" id="svWarn"></div>
+      <div class="note">Reuse the same conflict sentence across domains — that is what makes one probe return four of them.</div>
+      <div class="ctl"><button class="btn primary" onclick="solvedSave()">save</button><button class="btn" onclick="document.getElementById('solved').classList.remove('on')">cancel</button></div>
+    </div>
   </div>
   <div id="refView" onclick="this.style.display='none'" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:99;align-items:center;justify-content:center;flex-direction:column;padding:20px">
     <img id="refViewImg" style="max-width:100%;max-height:82vh;border-radius:8px">
@@ -209,6 +262,7 @@ if(!DB){
   }catch(e){}
 }
 DB.modelCompass=DB.modelCompass||''; DB.compassLogM=DB.compassLogM||[];
+DB.probes=DB.probes||[];
 /* arenas (disciplines) */
 DB.arenas=DB.arenas||['FILM']; DB.arena=DB.arena||DB.arenas[0];
 if(!DB.compW){ DB.compW={}; DB.compW[DB.arenas[0]]={c:DB.compass||'',log:DB.compassLog||[]}; }
@@ -251,7 +305,7 @@ const today=()=>new Date().toISOString().slice(0,10);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 let chipPrefix='', timer={len:0,rem:0,id:null}, testingIdx=null;
 
-const TYPES={wall:{tag:'WALL',cls:'wall'},cand:{tag:'',cls:'cand'},flinch:{tag:'FLINCH · banked, not acted on',cls:'flinch'},link:{tag:'LINK',cls:'link'},intake:{tag:'INTAKE',cls:'intake'},hyp:{tag:'HYPOTHESIS · untested',cls:'hyp'},fail:{tag:'FAILS WHEN → candidate compass',cls:'fail'},eval:{tag:'EVAL',cls:'evalE'}};
+const TYPES={wall:{tag:'WALL',cls:'wall'},cand:{tag:'',cls:'cand'},flinch:{tag:'FLINCH · banked, not acted on',cls:'flinch'},link:{tag:'LINK',cls:'link'},intake:{tag:'INTAKE',cls:'intake'},hyp:{tag:'HYPOTHESIS · untested',cls:'hyp'},fail:{tag:'FAILS WHEN → candidate compass',cls:'fail'},eval:{tag:'EVAL',cls:'evalE'},solved:{tag:'SOLVED ELSEWHERE',cls:'solvedE'}};
 
 function parse(v){
   if(v.startsWith('>')) return ['wall',v.slice(1).trim()];
@@ -443,7 +497,7 @@ function renderLib(){
   const q=($('libSearch').value||'').toLowerCase();
   const on=f=>document.querySelector(`#libF [data-f="${f}"]`).classList.contains('on');
   const hit=t=>!q||t.toLowerCase().includes(q);
-  const secs=[['wall','COMPASS — walls, tap to load',e=>e.ty==='wall'],['cand','FOG — picks & flinches (search reaches all)',e=>(e.ty==='cand'&&(q||e.state==='picked'))||e.ty==='flinch'],['link','LINKS',e=>e.ty==='link'],['fail','FAILURE LINES — tap to load as compass',e=>e.ty==='fail'],['intake','INTAKE LINKS',e=>e.ty==='intake'],['hyp','HYPOTHESES',e=>e.ty==='hyp']];
+  const secs=[['wall','COMPASS — walls, tap to load',e=>e.ty==='wall'],['cand','FOG — picks & flinches (search reaches all)',e=>(e.ty==='cand'&&(q||e.state==='picked'))||e.ty==='flinch'],['link','LINKS',e=>e.ty==='link'],['fail','FAILURE LINES — tap to load as compass',e=>e.ty==='fail'],['intake','INTAKE LINKS',e=>e.ty==='intake'],['hyp','HYPOTHESES',e=>e.ty==='hyp'],['solved','SOLVED ELSEWHERE — conflicts with a resolution attached',e=>e.ty==='solved']];
   let html='';
   const wallsExtra=DB.compassLog.filter(w=>hit(w.t)).map(w=>({t:w.t,ty:'wall',d:w.d}));
   secs.forEach(([f,title,fn])=>{
@@ -453,14 +507,102 @@ function renderLib(){
     items.reverse();
     html+=`<h3>${title} (${items.length})</h3>`+(items.map(e=>{
       const T=TYPES[e.ty]||TYPES.cand;
-      const load=(e.ty==='wall'||e.ty==='fail')?`onclick='loadCompass(${JSON.stringify(e.t)})' style="cursor:pointer"`:'';
-      const acts=e.ty==='hyp'?`<div class="acts"><button class="mini" onclick="deploy(${e.i})">⚗ test</button></div>`:'';
+      if(e.ty==='solved') return `<div class="en solvedE">${esc(e.t)}<span class="res">→ ${esc(e.res||'')}</span><span class="tag">${esc(e.dom||'')} · ${e.d||''}</span></div>`;
+      /* was onclick='loadCompass("…")' inside a single-quoted attribute, so any
+         wall containing an apostrophe ("she can't leave") cut the handler short
+         and tapping the row silently did nothing. Same data-attribute fix. */
+      const load=(e.ty==='wall'||e.ty==='fail')?`data-c="${esc(e.t)}" onclick="loadCompass(this.dataset.c)" style="cursor:pointer"`:'';
+      let acts='';
+      if(e.ty==='hyp') acts=`<div class="acts"><button class="mini" onclick="deploy(${e.i})">⚗ test</button></div>`;
+      /* wall rows already load-as-compass on tap, so probe needs its own control
+         and must not let the click reach the row. Text goes via a data attribute
+         rather than an inlined string literal — walls contain apostrophes. */
+      if(e.ty==='wall') acts=`<div class="acts"><button class="mini" data-w="${esc(e.t)}" onclick="event.stopPropagation();probeStart(this.dataset.w)">◎ probe</button></div>`;
       return `<div class="en ${T.cls} ${e.st||''} ${e.state||''}" ${load}>${esc(e.t)}<span class="tag">${e.ar?esc(e.ar)+' · ':''}${e.d||''}${e.cx?' · '+esc(e.cx):''}${e.st?' · '+e.st:''}</span>${acts}</div>`;
     }).join('')||'<div class="note">none yet</div>');
   });
   $('libList').innerHTML=html;
+  renderProbes();
 }
-function loadCompass(t){ if(DB.compass) DB.compassLog.push({t:DB.compass,d:today()}); DB.compass=t; save(); renderCompass(); pane('stream',document.querySelector('.tab')); window.scrollTo(0,0); }
+function renderProbes(){
+  const items=(DB.probes||[]).filter(p=>!p.a);
+  $('probeLog').innerHTML = items.length
+    ? '<h3>COULD NOT PLACE — oldest first</h3>'+items.map(p=>`<div class="en" style="border-color:var(--dim);color:var(--dim)">${esc(p.w)}<span class="tag">${p.d}${p.m?' · was stored':''}</span></div>`).join('')
+    : '';
+}
+/* wrote the legacy DB.compass, which renderCompass stopped reading when compasses
+   moved per-arena into compW — so "tap to load" has been setting a dead field and
+   changing nothing on screen. Writes to the arena now, logging the outgoing wall
+   the same way addEntry and commitCompass do. Legacy field kept as a mirror so
+   older backups still merge. */
+function loadCompass(t){
+  const A=DB.compW[DB.arena];
+  if(A.c) A.log.push({t:A.c,d:today()});
+  A.c=t; DB.compass=t;
+  save(); renderCompass(); pane('stream',document.querySelector('.tab')); window.scrollTo(0,0);
+}
+
+/* ================= probe: retrieval before reveal =================
+   The app's whole vocabulary here is store, hide, show, log. It never links.
+   Matching is exact on the shape you wrote: fuzzy matching would be the app
+   deciding two sentences are the same, and that is the one voluntary act.
+   Consequence, accepted deliberately — near-duplicate phrasings will miss. */
+let PROBE=null, svNounAck=false;
+const norm=s=>String(s||'').trim().toLowerCase().replace(/\s+/g,' ');
+function shapes(){ return [...new Set(DB.entries.filter(e=>e.ty==='solved').map(e=>e.t))]; }
+function fillList(id){ $(id).innerHTML=shapes().map(s=>`<option value="${esc(s)}">`).join(''); }
+function pbStep(n){ [1,2,3].forEach(i=>$('pbS'+i).style.display=(i===n?'block':'none')); }
+function probeStart(w){
+  PROBE={w,a:'',fx:''};
+  $('pbWall').textContent=w; $('pbAns').value=''; $('pbShape').value=''; $('pbOut').innerHTML='';
+  pbStep(1); $('probe').classList.add('on'); setTimeout(()=>$('pbAns').focus(),50);
+}
+function probeAnswer(nothing){
+  if(!PROBE) return;
+  const v=$('pbAns').value.trim();
+  if(!nothing && !v) return;          /* commit needs an answer, or use "nothing comes" */
+  PROBE.a=nothing?'':v;
+  fillList('pbShapes'); pbStep(2); setTimeout(()=>$('pbShape').focus(),50);
+}
+function probeReveal(){
+  if(!PROBE) return;
+  const fx=$('pbShape').value.trim(); if(!fx) return;
+  PROBE.fx=fx;
+  const m=DB.entries.filter(e=>e.ty==='solved'&&norm(e.t)===norm(fx));
+  const hitDom=!!PROBE.a && m.some(e=>norm(e.dom)===norm(PROBE.a));
+  DB.probes.push({w:PROBE.w,a:PROBE.a,fx,m:m.length>0,d:today()}); save();
+  const said=esc(PROBE.a);
+  let head;
+  if(PROBE.a&&hitDom)       head=`<div class="note">You named <b style="color:var(--ink)">${said}</b>, and it is stored. The edge is live.</div>`;
+  else if(PROBE.a&&m.length) head=`<div class="note">You named <b style="color:var(--ink)">${said}</b>, which is not stored under this shape — worth logging. These are, and you did not reach them.</div>`;
+  else if(PROBE.a)           head=`<div class="note">You named <b style="color:var(--ink)">${said}</b>. Nothing is stored under this shape. A hole in the library, not in you — study it and log it.</div>`;
+  else if(m.length)          head=`<div class="note" style="color:var(--acc)">Nothing came, and this was stored. An edge you built and lost.</div>`;
+  else                       head=`<div class="note">Nothing came, and nothing is stored. No region attached to this shape yet — that is the map diagnosis, not a linking failure.</div>`;
+  $('pbOut').innerHTML=head+m.map(e=>`<div class="en solvedE">${esc(e.t)}<span class="res">→ ${esc(e.res||'')}</span><span class="tag">${esc(e.dom||'')} · ${e.d||''}</span></div>`).join('');
+  pbStep(3); renderLib();
+}
+function probeClose(){ $('probe').classList.remove('on'); PROBE=null; }
+
+function solvedOpen(){
+  $('svShape').value=''; $('svDom').value=''; $('svRes').value=''; $('svWarn').textContent=''; svNounAck=false;
+  fillList('svShapes'); $('solved').classList.add('on'); setTimeout(()=>$('svShape').focus(),50);
+}
+function solvedSave(){
+  const t=$('svShape').value.trim(), dom=$('svDom').value.trim(), res=$('svRes').value.trim();
+  const W=$('svWarn');
+  if(!t){ W.textContent='The conflict is required.'; return; }
+  if(!dom){ W.textContent='Refused. A conflict with no named domain is a thought you had, not an entry in a map.'; return; }
+  if(!res){ W.textContent='The resolution shape is required — it is the thing that crosses.'; return; }
+  /* nouns are what make two identical conflicts look unrelated. Flag, don't refuse. */
+  const nouns=(t.match(/\b[A-Z][a-z]{2,}\b/g)||[]).filter(w=>t.indexOf(w)>0);
+  if(nouns.length && !svNounAck){
+    svNounAck=true;
+    W.textContent='Proper nouns make identical conflicts look unrelated, and an entry with them is unqueryable: '+nouns.join(', ')+'. Rewrite noun-free, or press save again to keep it.';
+    return;
+  }
+  DB.entries.push({t,ty:'solved',dom,res,d:today(),ts:Date.now(),sc:'w',ar:DB.arena});
+  save(); $('solved').classList.remove('on'); renderLib();
+}
 function pane(n,el){ document.querySelectorAll('.pane').forEach(p=>p.classList.remove('on')); document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on')); $('pane-'+n).classList.add('on'); el.classList.add('on'); SCOPE=(n==='model')?'m':'w'; renderCompass(); }
 function renderModel(){
   const items=DB.entries.filter(e=>e.sc==='m').slice(-80);
@@ -523,7 +665,7 @@ function backupText(){
 
 /* merge two DB objects; b wins on scalars only where a is empty */
 function mergeDB(cur,inc){
-  const key=e=>[e.ty,e.t,e.d||'',e.tm||'',e.sc||''].join('|');
+  const key=e=>[e.ty,e.t,e.d||'',e.tm||'',e.sc||'',e.dom||''].join('|');
   const seen=new Set((cur.entries||[]).map(key));
   let added=0;
   (inc.entries||[]).forEach(e=>{ if(!seen.has(key(e))){ seen.add(key(e)); cur.entries.push(e); added++; } });
@@ -534,6 +676,10 @@ function mergeDB(cur,inc){
   const logMerge=(a,b)=>{ const s=new Set((a||[]).map(w=>w.t+'|'+w.d)); (b||[]).forEach(w=>{ if(!s.has(w.t+'|'+w.d)){ s.add(w.t+'|'+w.d); a.push(w); } }); return a; };
   cur.compassLog=logMerge(cur.compassLog||[],inc.compassLog);
   cur.compassLogM=logMerge(cur.compassLogM||[],inc.compassLogM);
+
+  cur.probes=cur.probes||[];
+  { const s=new Set(cur.probes.map(p=>p.w+'|'+p.d+'|'+p.a));
+    (inc.probes||[]).forEach(p=>{ const k=p.w+'|'+p.d+'|'+p.a; if(!s.has(k)){ s.add(k); cur.probes.push(p); } }); }
 
   (inc.arenas||[]).forEach(a=>{ if(cur.arenas.indexOf(a)<0) cur.arenas.push(a); });
   cur.compW=cur.compW||{};
