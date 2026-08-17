@@ -81,6 +81,16 @@
   .mwarn { font-size:12px; color:var(--bad); line-height:1.5; margin-top:8px; min-height:1px; }
   .rt { white-space:pre-wrap; font-family:'Courier New',monospace; font-size:14px; line-height:1.6; margin:3px 0 16px; }
   .ordN { color:var(--dim); font-family:ui-monospace,SF Mono,Menlo,monospace; margin-right:8px; }
+  /* the grip is the only draggable part: dragging the row itself would fight the
+     page scroll on a phone. touch-action:none stops iOS scrolling/selecting from
+     the grip, and the callout rule stops the long-press magnifier. */
+  /* padded out to a thumb-sized target, pulled back with negative margin so the
+     row stays as compact as it looks */
+  .grip { display:inline-block; touch-action:none; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none;
+          color:var(--dim); cursor:grab; padding:11px 15px 11px 7px; margin:-11px 0 -11px -7px; font-size:17px; line-height:1; }
+  .en.dragsrc { opacity:.34; }
+  .dropline { height:0; border-top:2px solid var(--acc); margin:3px 0; }
+  body.dragging { cursor:grabbing; }
   .ordT { cursor:pointer; border-bottom:1px dotted var(--line); }
   .moved { color:var(--acc); }
 </style>
@@ -134,7 +144,7 @@
       <textarea id="draftTxt" oninput="autosaveDraft()" placeholder="INT. — the straight version…" style="width:100%;min-height:55vh;background:var(--panel);border:1px solid var(--line);border-radius:10px;color:var(--ink);font-size:15px;line-height:1.6;padding:16px;outline:none;font-family:'Courier New',monospace"></textarea>
     </div>
     <div id="dOrder" style="display:none">
-      <div class="note">Orders are sequences over the same scenes. Reordering never touches the scene text, and holding two orders costs nothing — duplicate one, move things, read both.</div>
+      <div class="note">Orders are sequences over the same scenes. Drag by the <b style="color:var(--ink)">≡</b> handle to move one; an amber line shows where it lands. Reordering never touches the scene text, and holding two orders costs nothing — duplicate one, move things, read both.</div>
       <div class="ctl">
         <select id="ordSel" onchange="pickOrder(this.value)" style="background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px;max-width:52%"></select>
         <button class="btn" onclick="dupOrder()">⧉ duplicate</button>
@@ -1028,8 +1038,13 @@ function renameOrder(){
    filtered by project, so row 3 is not necessarily seq[2] */
 function moveScene(id,dir){
   const o=curOrder(); if(!o) return;
-  const i=o.seq.indexOf(id), j=i+dir;
-  if(i<0||j<0||j>=o.seq.length) return;
+  const i=o.seq.indexOf(id); if(i<0) return;
+  /* step over any scene this scope hides, or the press swaps with something
+     invisible and reads as a dead button */
+  const here={}; draftsHere().forEach(x=>here[x.d.id]=1);
+  let j=i+dir;
+  while(j>=0 && j<o.seq.length && !here[o.seq[j]]) j+=dir;
+  if(j<0||j>=o.seq.length) return;
   const s=o.seq; [s[i],s[j]]=[s[j],s[i]];
   o.up=Date.now(); save(); renderOrder();
 }
@@ -1070,7 +1085,7 @@ function renderOrder(){
          : j===i ? ' · same'
          : ` · <span class="moved">was ${j+1}</span>`;
     }
-    html+=`<div class="en" style="border-color:var(--line)"><span class="ordN">${String(i+1).padStart(2,'0')}</span><span class="ordT" onclick="openScene('${id}')">${esc(d.title)}</span><span class="tag">${w} words · ${cum} running${mv}</span><div class="acts"><button class="mini" onclick="moveScene('${id}',-1)">▲</button><button class="mini" onclick="moveScene('${id}',1)">▼</button><button class="mini" onclick="dropScene('${id}')">take out</button></div></div>`;
+    html+=`<div class="en" data-id="${id}" style="border-color:var(--line)"><span class="grip" onpointerdown="dragStart(event,'${id}')">≡</span><span class="ordN">${String(i+1).padStart(2,'0')}</span><span class="ordT" onclick="openScene('${id}')">${esc(d.title)}</span><span class="tag">${w} words · ${cum} running${mv}</span><div class="acts"><button class="mini" onclick="moveScene('${id}',-1)">▲</button><button class="mini" onclick="moveScene('${id}',1)">▼</button><button class="mini" onclick="dropScene('${id}')">take out</button></div></div>`;
   });
   const n=shown.length;
   $('ordList').innerHTML=(html||'<div class="note">Nothing in this order yet — append from below.</div>')
@@ -1080,6 +1095,64 @@ function renderOrder(){
     ? '<h3>NOT IN THIS ORDER</h3>'+un.map(x=>`<div class="en" style="border-color:var(--dim);color:var(--dim)"><span class="ordT" onclick="openScene('${x.d.id}')">${esc(x.d.title)}</span><span class="tag">${wc(x.d.txt)} words</span><div class="acts"><button class="mini" onclick="addScene('${x.d.id}')">＋ append</button></div></div>`).join('')
     : '';
 }
+/* ---- drag to reorder ----
+   Pointer events rather than HTML5 drag-and-drop, which does not fire on iOS at
+   all. The dragged row stays put and dims; an amber line shows where it lands.
+   No lifted clone — the app has no shadows anywhere, and a static list with a
+   moving insertion line is both in keeping and far less to go wrong. */
+let DRAG=null, dropLine=null;
+function ordRows(){ return [...$('ordList').querySelectorAll('.en[data-id]')]; }
+function dragStart(ev,id){
+  if(DRAG) return;
+  const row=ev.currentTarget.closest('.en'); if(!row) return;
+  ev.preventDefault();
+  try{ ev.currentTarget.setPointerCapture(ev.pointerId); }catch(e){}
+  DRAG={id,row,pid:ev.pointerId,y0:ev.clientY,moved:false,before:null};
+  if(!dropLine){ dropLine=document.createElement('div'); dropLine.className='dropline'; }
+}
+function dragMove(ev){
+  if(!DRAG||ev.pointerId!==DRAG.pid) return;
+  /* a press that never travels is a tap, not a reorder */
+  if(!DRAG.moved){
+    if(Math.abs(ev.clientY-DRAG.y0)<5) return;
+    DRAG.moved=true; DRAG.row.classList.add('dragsrc'); document.body.classList.add('dragging');
+  }
+  ev.preventDefault();
+  const vh=window.innerHeight;                 /* reach the ends of a long list one-handed */
+  if(ev.clientY<80) window.scrollBy(0,-14);
+  else if(ev.clientY>vh-120) window.scrollBy(0,14);
+  let before=null;
+  for(const r of ordRows()){
+    if(r===DRAG.row) continue;
+    const b=r.getBoundingClientRect();
+    if(ev.clientY < b.top+b.height/2){ before=r; break; }
+  }
+  DRAG.before=before;
+  if(before) before.parentNode.insertBefore(dropLine,before);
+  else { const rows=ordRows(), last=rows[rows.length-1]; if(last) last.parentNode.insertBefore(dropLine,last.nextSibling); }
+}
+function dragStop(commit){
+  if(!DRAG) return;
+  const d=DRAG; DRAG=null;
+  d.row.classList.remove('dragsrc'); document.body.classList.remove('dragging');
+  if(dropLine&&dropLine.parentNode) dropLine.parentNode.removeChild(dropLine);
+  const o=curOrder();
+  if(commit && d.moved && o){
+    /* splice against the full seq, which can hold ids this scope hides, so those
+       keep their relative places instead of being dropped by the rewrite */
+    const rest=o.seq.filter(x=>x!==d.id);
+    const beforeId=d.before?d.before.dataset.id:null;
+    let at=beforeId?rest.indexOf(beforeId):rest.length;
+    if(at<0) at=rest.length;
+    rest.splice(at,0,d.id);
+    if(rest.join()!==o.seq.join()){ o.seq=rest; o.up=Date.now(); save(); }
+  }
+  renderOrder();
+}
+document.addEventListener('pointermove',dragMove,{passive:false});
+document.addEventListener('pointerup',()=>dragStop(true));
+document.addEventListener('pointercancel',()=>dragStop(false));
+
 function readThrough(){
   flushPending();
   const o=ensureOrder(), by={};
