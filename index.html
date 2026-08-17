@@ -79,6 +79,10 @@
   .mcard .q { font-size:11px; letter-spacing:2px; color:var(--acc); margin-top:12px; }
   .mwall { border-left:2px solid var(--acc); background:rgba(212,162,78,.06); color:var(--acc); padding:9px 11px; border-radius:0 6px 6px 0; font-size:15px; line-height:1.4; }
   .mwarn { font-size:12px; color:var(--bad); line-height:1.5; margin-top:8px; min-height:1px; }
+  .rt { white-space:pre-wrap; font-family:'Courier New',monospace; font-size:14px; line-height:1.6; margin:3px 0 16px; }
+  .ordN { color:var(--dim); font-family:ui-monospace,SF Mono,Menlo,monospace; margin-right:8px; }
+  .ordT { cursor:pointer; border-bottom:1px dotted var(--line); }
+  .moved { color:var(--acc); }
 </style>
 </head>
 <body>
@@ -117,13 +121,33 @@
   </div>
 
   <div class="pane" id="pane-draft">
-    <div class="note">The straight attempt — the scene itself, rules on, typed here. Autosaves as you go. When a wall appears, don't solve it: bank it in the box below with <b style="color:var(--acc)">&gt;</b> and keep writing. Scene text never leaves this device — exports carry titles and word counts only.</div>
-    <div class="ctl">
-      <select id="draftSel" onchange="pickDraft(this.value)" style="background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px;max-width:60%"></select>
-      <button class="btn" onclick="newDraft()">＋ new scene</button>
-      <span class="note" id="draftMeta"></span>
+    <div class="filterRow" id="draftMode">
+      <span class="on" data-m="write" onclick="draftMode('write')">WRITE</span><span data-m="order" onclick="draftMode('order')">ORDER</span>
     </div>
-    <textarea id="draftTxt" oninput="autosaveDraft()" placeholder="INT. — the straight version…" style="width:100%;min-height:55vh;background:var(--panel);border:1px solid var(--line);border-radius:10px;color:var(--ink);font-size:15px;line-height:1.6;padding:16px;outline:none;font-family:'Courier New',monospace"></textarea>
+    <div id="dWrite">
+      <div class="note">The straight attempt — the scene itself, rules on, typed here. Autosaves as you go. When a wall appears, don't solve it: bank it in the box below with <b style="color:var(--acc)">&gt;</b> and keep writing. Scene text never leaves this device — exports carry titles and word counts only.</div>
+      <div class="ctl">
+        <select id="draftSel" onchange="pickDraft(this.value)" style="background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px;max-width:60%"></select>
+        <button class="btn" onclick="newDraft()">＋ new scene</button>
+        <span class="note" id="draftMeta"></span>
+      </div>
+      <textarea id="draftTxt" oninput="autosaveDraft()" placeholder="INT. — the straight version…" style="width:100%;min-height:55vh;background:var(--panel);border:1px solid var(--line);border-radius:10px;color:var(--ink);font-size:15px;line-height:1.6;padding:16px;outline:none;font-family:'Courier New',monospace"></textarea>
+    </div>
+    <div id="dOrder" style="display:none">
+      <div class="note">Orders are sequences over the same scenes. Reordering never touches the scene text, and holding two orders costs nothing — duplicate one, move things, read both.</div>
+      <div class="ctl">
+        <select id="ordSel" onchange="pickOrder(this.value)" style="background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px;max-width:52%"></select>
+        <button class="btn" onclick="dupOrder()">⧉ duplicate</button>
+        <button class="btn" onclick="newOrder()">＋ empty</button>
+        <button class="btn" onclick="renameOrder()">✎ rename</button>
+      </div>
+      <div class="ctl">
+        <select id="ordCmp" onchange="setCmp(this.value)" style="background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px;max-width:52%"></select>
+        <button class="btn primary" onclick="readThrough()">▤ read it through</button>
+      </div>
+      <div id="ordList"></div>
+      <div id="ordUnplaced"></div>
+    </div>
   </div>
   <div class="pane" id="pane-model">
     <div class="note">Compass and fog on <b style="color:var(--acc)">the model itself</b>. Same prefixes, separate stream, its own compass. Nothing here is applied — it waits for the quarterly review.</div>
@@ -178,6 +202,13 @@
       <button class="btn" onclick="recoverOld('loop_v2')">⟲ Merge stranded loop_v2</button>
     </div>
     <div class="note">Earlier versions of the app wrote to other keys. Nothing reads <b>loop_v2</b> during normal use, so anything saved there is invisible until merged.</div>
+  </div>
+  <div class="modal" id="readthru">
+    <div class="mcard">
+      <div class="q" id="rtName"></div>
+      <div id="rtBody" style="max-height:66vh;overflow-y:auto;margin-top:10px"></div>
+      <div class="ctl"><button class="btn" onclick="document.getElementById('readthru').classList.remove('on')">close</button></div>
+    </div>
   </div>
   <div class="modal" id="probe">
     <div class="mcard">
@@ -359,13 +390,13 @@ function cycleArena(){
   if(DB.arenas.length<2){ addArena(); return; }
   const i=DB.arenas.indexOf(DB.arena);
   DB.arena=DB.arenas[(i+1)%DB.arenas.length];
-  save(); renderCompass(); renderStream();
+  save(); renderCompass(); renderStream(); reorderIfOpen();
 }
 function addArena(){
   const n=(prompt('New discipline name? (e.g. POETRY)')||'').trim().toUpperCase();
   if(!n||DB.arenas.includes(n)) return;
   DB.arenas.push(n); DB.compW[n]={c:'',log:[]}; DB.arena=n;
-  save(); renderCompass(); renderStream();
+  save(); renderCompass(); renderStream(); reorderIfOpen();
 }
 /* projects within a discipline */
 function pget(){ DB.proj=DB.proj||{}; DB.proj[DB.arena]=DB.proj[DB.arena]||{list:[],cur:'ALL'}; return DB.proj[DB.arena]; }
@@ -374,13 +405,13 @@ function cycleProject(){
   if(!P.list.length){ addProject(); return; }
   const opts=['ALL'].concat(P.list);
   P.cur=opts[(opts.indexOf(P.cur)+1)%opts.length];
-  save(); renderCompass(); renderStream();
+  save(); renderCompass(); renderStream(); reorderIfOpen();
 }
 function addProject(){
   const n=(prompt('Project name? (e.g. NEUKÖLLN)')||'').trim();
   if(!n) return; const P=pget();
   if(!P.list.includes(n)) P.list.push(n);
-  P.cur=n; save(); renderCompass(); renderStream();
+  P.cur=n; save(); renderCompass(); renderStream(); reorderIfOpen();
 }
 
 /* When the discipline/project filters hide entries, say so. Silently showing an
@@ -681,6 +712,15 @@ function mergeDB(cur,inc){
   { const s=new Set(cur.probes.map(p=>p.w+'|'+p.d+'|'+p.a));
     (inc.probes||[]).forEach(p=>{ const k=p.w+'|'+p.d+'|'+p.a; if(!s.has(k)){ s.add(k); cur.probes.push(p); } }); }
 
+  /* orders are small and identified, so last-touched wins rather than forking */
+  cur.orders=cur.orders||[];
+  (inc.orders||[]).forEach(o=>{
+    const e=cur.orders.find(x=>x.id===o.id);
+    if(!e){ cur.orders.push(o); added++; }
+    else if((o.up||0)>(e.up||0)){ e.name=o.name; e.seq=(o.seq||[]).slice(); e.up=o.up; }
+  });
+  cur.ordCur=Object.assign({},inc.ordCur||{},cur.ordCur||{});
+
   (inc.arenas||[]).forEach(a=>{ if(cur.arenas.indexOf(a)<0) cur.arenas.push(a); });
   cur.compW=cur.compW||{};
   Object.keys(inc.compW||{}).forEach(a=>{
@@ -704,7 +744,9 @@ function mergeDB(cur,inc){
     if(a===b||a.indexOf(b)>=0) return;               /* incoming adds nothing */
     if(b.indexOf(a)>=0){ e.txt=b; e.up=d.up||e.up; return; }  /* strict superset */
     const stamp=d.up?new Date(d.up).toISOString().slice(0,10):'backup';
-    cur.drafts.push(Object.assign({},d,{title:d.title+' ['+stamp+' backup copy]'}));
+    /* fresh id: a copy sharing the original's id would make both scenes resolve
+       to the same row and would silently shadow one of them inside an order */
+    cur.drafts.push(Object.assign({},d,{id:uid(),title:d.title+' ['+stamp+' backup copy]'}));
     added++;
   });
 
@@ -847,6 +889,20 @@ function exportMd(){
     (dr.pj||dr.ar||'')+(dr.up?', updated '+new Date(dr.up).toISOString().slice(0,10):'')+')_\n');
   if(!(D.drafts||[]).length) md+='_none_\n';
 
+  /* orders are structure, not prose, so the digest can carry them in full —
+     titles and counts only, same rule as the drafts above */
+  if((D.orders||[]).length){
+    const byId={}; (D.drafts||[]).forEach(dr=>byId[dr.id]=dr);
+    md+='\n## Scene orders\n';
+    (D.orders||[]).forEach(o=>{
+      const rows=(o.seq||[]).map(id=>byId[id]).filter(Boolean);
+      const tot=rows.reduce((n,dr)=>n+((dr.txt||'').trim().match(/\S+/g)||[]).length,0);
+      md+='\n**'+o.name+'** — '+(o.k||'').replace('|',' · ')+' · '+rows.length+' scenes · '+tot+' words\n';
+      rows.forEach((dr,i)=>md+=(i+1)+'. '+dr.title+' — '+((dr.txt||'').trim().match(/\S+/g)||[]).length+' words\n');
+      if(!rows.length) md+='_empty_\n';
+    });
+  }
+
   md+='\n## Refs (image data excluded — it is in the .json backup)\n';
   (D.refs||[]).forEach(r=>md+='- '+(r.cap||r.note||'(untitled)')+' _('+[r.ar,r.pj,r.d].filter(Boolean).join(' · ')+')_\n');
   if(!(D.refs||[]).length) md+='_none_\n';
@@ -872,11 +928,20 @@ function recoverV1(){
 
 /* ---- straight drafts (scene text: stays local, never exported in full) ---- */
 DB.drafts=DB.drafts||[]; let curDraft=null, draftTimer=null;
+/* Scenes were identified by array index, which is not stable across a merge or a
+   restore. Orders reference scenes, so every scene gets a durable id, backfilled
+   once for anything written before this existed. */
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+(function(){ let n=0; DB.drafts.forEach(d=>{ if(!d.id){ d.id=uid(); n++; } }); if(n) save(); })();
 function draftsHere(){ const P=pget(); return DB.drafts.map((d,i)=>({d,i})).filter(x=>x.d.ar===DB.arena&&(P.cur==='ALL'||x.d.pj===P.cur||!x.d.pj)); }
 function newDraft(){
   const t=(prompt('Scene title?')||'').trim(); if(!t) return;
   const P=pget();
-  DB.drafts.push({title:t, txt:'', ar:DB.arena, pj:(P.cur!=='ALL'?P.cur:''), d:today(), up:Date.now()});
+  const id=uid();
+  DB.drafts.push({id, title:t, txt:'', ar:DB.arena, pj:(P.cur!=='ALL'?P.cur:''), d:today(), up:Date.now()});
+  /* a new scene lands at the end of the order you are working in, rather than
+     appearing only in the unplaced list, which reads as the app losing it */
+  const o=curOrder(); if(o && o.seq.indexOf(id)<0){ o.seq.push(id); o.up=Date.now(); }
   curDraft=DB.drafts.length-1; save(); renderDraft();
 }
 function pickDraft(i){ curDraft=parseInt(i,10); renderDraft(); }
@@ -888,6 +953,7 @@ function renderDraft(){
   $('draftTxt').value=D?D.txt:'';
   $('draftTxt').disabled=!D;
   $('draftMeta').textContent=D?`${(D.txt.trim().match(/\S+/g)||[]).length} words · ${D.pj||D.ar}`:'';
+  reorderIfOpen();
 }
 function commitDraft(){
   if(curDraft===null||!DB.drafts[curDraft]) return;
@@ -910,6 +976,125 @@ function flushPending(){
   clearTimeout(draftTimer);
   commitCompass();   /* not via blur() — focus can be lost before we get here */
   commitDraft();
+}
+
+/* ================= scene order =================
+   An order is a named sequence of scene ids, scoped to a discipline+project.
+   Orders hold no prose: moving a scene, or dropping it from one order, cannot
+   touch what you wrote. Several orders over one set of scenes is the point —
+   duplicate, move, read both. */
+DB.orders=DB.orders||[]; DB.ordCur=DB.ordCur||{};
+let ordCmp='';
+function scopeKey(){ const P=pget(); return DB.arena+'|'+(P.cur||'ALL'); }
+function ordersHere(){ const k=scopeKey(); return DB.orders.filter(o=>o.k===k); }
+function curOrder(){
+  const list=ordersHere(); if(!list.length) return null;
+  return list.find(o=>o.id===DB.ordCur[scopeKey()]) || list[0];
+}
+function ensureOrder(){
+  const o=curOrder(); if(o) return o;
+  const k=scopeKey();
+  const n={id:uid(), k, name:'order 1', seq:draftsHere().map(x=>x.d.id), d:today(), up:Date.now()};
+  DB.orders.push(n); DB.ordCur[k]=n.id; save(); return n;
+}
+/* the discipline and project chips are always on screen, including while the order
+   view is open, and an order is scoped to both — so a scope change has to redraw it */
+function reorderIfOpen(){ if($('dOrder') && $('dOrder').style.display!=='none') renderOrder(); }
+function draftMode(m){
+  document.querySelectorAll('#draftMode span').forEach(s=>s.classList.toggle('on',s.dataset.m===m));
+  $('dWrite').style.display = m==='write'?'block':'none';
+  $('dOrder').style.display = m==='order'?'block':'none';
+  if(m==='order'){ flushPending(); renderOrder(); }   /* so counts include what you just typed */
+}
+function pickOrder(id){ DB.ordCur[scopeKey()]=id; ordCmp=''; save(); renderOrder(); }
+function setCmp(id){ ordCmp=id; renderOrder(); }
+function newOrder(){
+  const n=(prompt('Name this order?','order '+(ordersHere().length+1))||'').trim(); if(!n) return;
+  const o={id:uid(), k:scopeKey(), name:n, seq:[], d:today(), up:Date.now()};
+  DB.orders.push(o); DB.ordCur[o.k]=o.id; ordCmp=''; save(); renderOrder();
+}
+function dupOrder(){
+  const c=ensureOrder();
+  const n=(prompt('Name the copy?',c.name+' b')||'').trim(); if(!n) return;
+  const o={id:uid(), k:c.k, name:n, seq:c.seq.slice(), d:today(), up:Date.now()};
+  DB.orders.push(o); DB.ordCur[o.k]=o.id; ordCmp=c.id; save(); renderOrder();
+}
+function renameOrder(){
+  const o=ensureOrder();
+  const n=(prompt('Rename this order?',o.name)||'').trim(); if(!n) return;
+  o.name=n; o.up=Date.now(); save(); renderOrder();
+}
+/* every operation keys on the scene id, never on a row index — the list can be
+   filtered by project, so row 3 is not necessarily seq[2] */
+function moveScene(id,dir){
+  const o=curOrder(); if(!o) return;
+  const i=o.seq.indexOf(id), j=i+dir;
+  if(i<0||j<0||j>=o.seq.length) return;
+  const s=o.seq; [s[i],s[j]]=[s[j],s[i]];
+  o.up=Date.now(); save(); renderOrder();
+}
+function dropScene(id){
+  const o=curOrder(); if(!o) return;
+  o.seq=o.seq.filter(x=>x!==id); o.up=Date.now(); save(); renderOrder();
+}
+function addScene(id){
+  const o=ensureOrder();
+  if(o.seq.indexOf(id)<0){ o.seq.push(id); o.up=Date.now(); save(); }
+  renderOrder();
+}
+function openScene(id){
+  const i=DB.drafts.findIndex(d=>d.id===id); if(i<0) return;
+  curDraft=i; draftMode('write'); renderDraft(); $('draftTxt').focus();
+}
+const wc=t=>((t||'').trim().match(/\S+/g)||[]).length;
+function renderOrder(){
+  const o=ensureOrder(), list=ordersHere();
+  $('ordSel').innerHTML=list.map(x=>`<option value="${x.id}" ${x.id===o.id?'selected':''}>${esc(x.name)}</option>`).join('');
+  const others=list.filter(x=>x.id!==o.id);
+  if(ordCmp && !others.some(x=>x.id===ordCmp)) ordCmp='';
+  $('ordCmp').innerHTML='<option value="">— compare with —</option>'+others.map(x=>`<option value="${x.id}" ${x.id===ordCmp?'selected':''}>${esc(x.name)}</option>`).join('');
+  $('ordCmp').disabled=!others.length;
+  const here={}; draftsHere().forEach(x=>here[x.d.id]=x.d);
+  const cmp=others.find(x=>x.id===ordCmp);
+  let cum=0, html='', pos=0;
+  /* numbering is the position on screen, not the index in seq: a scene the current
+     scope hides would otherwise leave a gap and make the list look like it lost one */
+  const shown=o.seq.filter(id=>here[id]);
+  const cmpShown=cmp?cmp.seq.filter(id=>here[id]):null;
+  shown.forEach(id=>{
+    const d=here[id], i=pos++, w=wc(d.txt); cum+=w;
+    let mv='';
+    if(cmpShown){
+      const j=cmpShown.indexOf(id);
+      mv = j<0 ? ` · <span class="moved">not in ${esc(cmp.name)}</span>`
+         : j===i ? ' · same'
+         : ` · <span class="moved">was ${j+1}</span>`;
+    }
+    html+=`<div class="en" style="border-color:var(--line)"><span class="ordN">${String(i+1).padStart(2,'0')}</span><span class="ordT" onclick="openScene('${id}')">${esc(d.title)}</span><span class="tag">${w} words · ${cum} running${mv}</span><div class="acts"><button class="mini" onclick="moveScene('${id}',-1)">▲</button><button class="mini" onclick="moveScene('${id}',1)">▼</button><button class="mini" onclick="dropScene('${id}')">take out</button></div></div>`;
+  });
+  const n=shown.length;
+  $('ordList').innerHTML=(html||'<div class="note">Nothing in this order yet — append from below.</div>')
+    +`<div class="note">${n} scene${n===1?'':'s'} · ${cum} words. Words are words; this is not a page count.</div>`;
+  const un=draftsHere().filter(x=>o.seq.indexOf(x.d.id)<0);
+  $('ordUnplaced').innerHTML = un.length
+    ? '<h3>NOT IN THIS ORDER</h3>'+un.map(x=>`<div class="en" style="border-color:var(--dim);color:var(--dim)"><span class="ordT" onclick="openScene('${x.d.id}')">${esc(x.d.title)}</span><span class="tag">${wc(x.d.txt)} words</span><div class="acts"><button class="mini" onclick="addScene('${x.d.id}')">＋ append</button></div></div>`).join('')
+    : '';
+}
+function readThrough(){
+  flushPending();
+  const o=ensureOrder(), by={};
+  DB.drafts.forEach(d=>by[d.id]=d);
+  let words=0, html='', n=0;
+  o.seq.forEach(id=>{
+    const d=by[id]; if(!d) return;
+    n++; words+=wc(d.txt);
+    html+=`<div class="q">${String(n).padStart(2,'0')} · ${esc(d.title)}</div>`
+        + `<div class="rt">${d.txt&&d.txt.trim()?esc(d.txt):'<span style="color:var(--dim)">— empty —</span>'}</div>`;
+  });
+  $('rtName').textContent=o.name+' · '+n+' scenes · '+words+' words';
+  $('rtBody').innerHTML=html||'<div class="note">Nothing in this order to read.</div>';
+  $('readthru').classList.add('on');
+  $('rtBody').scrollTop=0;
 }
 document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='hidden') flushPending(); });
 addEventListener('pagehide',flushPending);
