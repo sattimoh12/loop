@@ -863,23 +863,47 @@ function exportMd(){
     (D.compassLog||[]).forEach(w=>md+='- '+w.t+' _('+(w.d||'')+')_\n');
   }
 
-  const line=e=>'- '+(e.state==='picked'?'★ ':e.state==='killed'?'✕ ':'')+(e.dip?'~ ':'')+e.t+
-    ' _('+[e.d,e.tm,e.ar,e.pj,e.st,e.cx&&('compass: '+e.cx)].filter(Boolean).join(' · ')+')_\n';
-  const LABEL={wall:'Walls',fail:'Failure lines',link:'Links',intake:'Intake',hyp:'Hypotheses',
-               cand:'Fog / candidates',flinch:'Flinches',eval:'Evals'};
+  /* grouped by day inside each type. The date used to repeat on every single
+     line, which on a few hundred entries is a third of the file spent saying
+     the same thing. It is a heading now, and only what varies stays on the line. */
+  const MONN=['January','February','March','April','May','June','July','August',
+              'September','October','November','December'];
+  const longDay=k=>{ const q=(k||'').split('-');
+    return q.length===3 ? (+q[2])+' '+MONN[+q[1]-1]+' '+q[0] : (k||'undated'); };
+  const multiArena=(D.arenas||[]).length>1;
+  const mark=e=>(e.state==='picked'?'★ ':e.state==='killed'?'✕ ':'')+(e.dip?'~ ':'');
+  const meta=e=>{ const b=[e.tm, multiArena&&e.ar, e.pj, e.st,
+                           e.cx&&('compass: '+e.cx)].filter(Boolean);
+    return b.length?'  _('+b.join(' · ')+')_':''; };
+  const body=e=>e.ty==='solved'
+    ? e.t+' → **'+(e.res||'')+'**'+(e.dom?'  _('+e.dom+')_':'')
+    : e.t+meta(e);
+  const byDay=rows=>{
+    if(!rows.length) return '_none_\n';
+    const days={};
+    rows.forEach(e=>{ const k=e.d||'undated'; (days[k]=days[k]||[]).push(e); });
+    /* "undated" sorts above every real date, so it would lead the section */
+    const ks=Object.keys(days).filter(k=>k!=='undated').sort().reverse();
+    if(days.undated) ks.push('undated');
+    return ks.map(k=>
+      '\n**'+longDay(k)+'**\n'+days[k].map(e=>'- '+mark(e)+body(e)+'\n').join('')
+    ).join('');
+  };
+  const LABEL={wall:'Walls',fail:'Failure lines',link:'Links',solved:'Solved elsewhere',
+               intake:'Intake',hyp:'Hypotheses',cand:'Fog / candidates',flinch:'Flinches',eval:'Evals'};
 
   md+='\n## Working stream\n';
   Object.keys(LABEL).forEach(ty=>{
     const rows=(D.entries||[]).filter(e=>e.ty===ty&&e.sc!=='m');
     md+='\n### '+LABEL[ty]+' ('+rows.length+')\n';
-    md+=rows.length?rows.map(line).join(''):'_none_\n';
+    md+=byDay(rows);
   });
   const other=(D.entries||[]).filter(e=>e.sc!=='m'&&!LABEL[e.ty]);
-  if(other.length){ md+='\n### Other ('+other.length+')\n'+other.map(e=>'- ('+e.ty+') '+e.t+'\n').join(''); }
+  if(other.length){ md+='\n### Other ('+other.length+')\n'+byDay(other.map(e=>({...e,t:'('+e.ty+') '+e.t}))); }
 
   const mEntries=(D.entries||[]).filter(e=>e.sc==='m');
   md+='\n## Model stream ('+mEntries.length+')\n';
-  md+=mEntries.length?mEntries.map(e=>'- ('+e.ty+') '+e.t+' _('+[e.d,e.tm].filter(Boolean).join(' ')+')_\n').join(''):'_none_\n';
+  md+=byDay(mEntries.map(e=>({...e,t:'('+e.ty+') '+e.t})));
 
   md+='\n## Projects\n';
   const P=D.proj||{};
