@@ -93,6 +93,46 @@
   body.dragging { cursor:grabbing; }
   .ordT { cursor:pointer; border-bottom:1px dotted var(--line); }
   .moved { color:var(--acc); }
+  /* the model document — a reading surface, not a capture one */
+  .doc { padding-bottom:30px; }
+  .doc .doct { font-size:23px; letter-spacing:-.3px; margin:14px 0 4px; color:var(--acc); font-weight:600; }
+  .doc h2 { font-size:12px; letter-spacing:2.4px; text-transform:uppercase; color:var(--acc);
+            margin:30px 0 10px; padding-top:14px; border-top:1px solid var(--line); scroll-margin-top:120px; }
+  .doc h3 { font-size:13px; letter-spacing:.4px; color:var(--ink); margin:20px 0 8px; font-weight:600; text-transform:none; }
+  .doc p { font-size:14.5px; line-height:1.62; color:var(--ink); margin:9px 0; }
+  .doc ul { margin:9px 0; padding-left:18px; }
+  .doc li { font-size:14.5px; line-height:1.62; margin:5px 0; }
+  .doc .lede { color:var(--acc); background:rgba(212,162,78,.06); border-left:2px solid var(--acc);
+               padding:10px 12px; border-radius:0 6px 6px 0; font-size:14px; }
+  .doc .pull { border-left:2px solid var(--good); padding:8px 12px; color:var(--ink); font-size:14.5px;
+               background:rgba(127,176,105,.05); border-radius:0 6px 6px 0; }
+  .doc .note2 { font-size:12.5px; color:var(--dim); line-height:1.55; }
+  .doc .dl, .doc .num, .doc .src { display:flex; gap:10px; padding:8px 0; border-top:1px solid var(--line);
+               font-size:14px; line-height:1.55; }
+  .doc .dl b, .doc .num b, .doc .src b { flex:0 0 auto; color:var(--acc); font-weight:600; }
+  .doc .dl b { flex:0 0 34%; max-width:34%; }
+  .doc .num b { flex:0 0 auto; min-width:26px; }
+  .doc .src b { flex:0 0 40%; max-width:40%; font-family:ui-monospace,monospace; font-size:12px; color:var(--blue); }
+  .doc .dl span, .doc .num span, .doc .src span { flex:1; color:var(--ink); min-width:0; }
+  .doc .src span { color:var(--dim); font-size:13px; }
+  .doc .srcp { font-size:13px; color:var(--dim); line-height:1.6; }
+  .doc .fr { border-top:1px solid var(--line); padding:9px 0; font-size:14px; line-height:1.5; }
+  .doc .fr > b { display:block; color:var(--acc); font-weight:600; margin-bottom:3px; }
+  .doc .fr > div { color:var(--ink); padding:2px 0 2px 12px; }
+  .doc .fr i { color:var(--dim); font-style:normal; font-size:11px; letter-spacing:1.2px;
+               text-transform:uppercase; margin-right:7px; }
+  .doc .mk { display:inline-block; font-size:10px; font-weight:700; letter-spacing:.5px; padding:1px 5px;
+             border-radius:3px; vertical-align:1px; }
+  .doc .mk.f { background:rgba(127,176,105,.18); color:var(--good); }
+  .doc .mk.a { background:rgba(110,159,192,.18); color:var(--blue); }
+  .doc .mk.p { background:rgba(165,143,201,.18); color:var(--vio); }
+  .doc .mk.c { background:rgba(192,86,78,.18); color:var(--bad); }
+  .doc .cite { font-size:11.5px; color:var(--dim); font-family:ui-monospace,monospace; }
+  .doc .docnav { display:flex; flex-wrap:wrap; gap:6px; margin:4px 0 6px; }
+  .doc .docnav a { font-size:11px; letter-spacing:.6px; color:var(--dim); text-decoration:none;
+             border:1px solid var(--line); border-radius:99px; padding:4px 9px; }
+  .doc .docnav a:active { color:var(--acc); border-color:var(--acc); }
+  @media (min-width:620px){ .doc p, .doc li { font-size:15px; } }
 </style>
 </head>
 <body>
@@ -117,7 +157,7 @@
   <div class="tabs">
     <span class="tab on" onclick="pane('stream',this)">STREAM</span>
     <span class="tab" onclick="pane('draft',this);renderDraft()">STRAIGHT</span>
-    <span class="tab" onclick="pane('model',this);renderModel()">MODEL</span>
+    <span class="tab" onclick="pane('model',this);modelMode(MDMODE)">MODEL</span>
     <span class="tab" onclick="pane('lib',this);renderLib()">LIBRARY</span>
     <span class="tab" onclick="pane('refs',this);renderRefs()">REFS</span>
     <span class="tab" onclick="pane('data',this);renderData()">DATA</span>
@@ -155,14 +195,228 @@
         <select id="ordCmp" onchange="setCmp(this.value)" style="background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px;max-width:52%"></select>
         <button class="btn primary" onclick="readThrough()">▤ read it through</button>
       </div>
+      <div class="ctl">
+        <button class="btn" onclick="copyOrder()">⧉ copy for Fade In</button>
+        <button class="btn" onclick="exportFountain()">⇩ .fountain</button>
+      </div>
+      <div class="note">These two carry <b style="color:var(--ink)">the scene text itself</b>, in order — unlike the readable digest, which deliberately leaves prose out. Titles travel as Fountain comments, so nothing invented lands in the script.</div>
       <div id="ordList"></div>
       <div id="ordUnplaced"></div>
     </div>
   </div>
   <div class="pane" id="pane-model">
-    <div class="note">Compass and fog on <b style="color:var(--acc)">the model itself</b>. Same prefixes, separate stream, its own compass. Nothing here is applied — it waits for the quarterly review.</div>
-    <div class="ctl"><button class="btn" onclick="copyBank()">Copy all for the bank ↗</button></div>
-    <div id="modelStream"></div>
+    <div class="ctl">
+      <button class="btn primary" id="mdDocBtn" onclick="modelMode('doc')">▤ the model</button>
+      <button class="btn" id="mdStreamBtn" onclick="modelMode('stream')">✎ working on it</button>
+    </div>
+    <div id="modelWork" style="display:none">
+      <div class="note">Compass and fog on <b style="color:var(--acc)">the model itself</b>. Same prefixes, separate stream, its own compass. Nothing here is applied — it waits for the quarterly review.</div>
+      <div class="ctl"><button class="btn" onclick="copyBank()">Copy all for the bank ↗</button></div>
+      <div id="modelStream"></div>
+    </div>
+<div id="modelDoc" class="doc" style="display:none">
+<div class="docnav">
+<a href="#d-cycle">cycle</a><a href="#d-four">four parts</a><a href="#d-routes">routes</a><a href="#d-compass">compass</a><a href="#d-fog">fog</a><a href="#d-dip">deep-dip</a><a href="#d-map">map</a><a href="#d-link">linking</a><a href="#d-modes">modes</a><a href="#d-loop">the loop</a><a href="#d-train">training</a><a href="#d-daily">daily</a><a href="#d-src">sources</a><a href="#d-rests">what it rests on</a>
+</div>
+
+<h1 class="doct">The Search Model</h1>
+
+<h2 id="d-cycle">The cycle</h2>
+<p class="lede">tighten (name the wall, criterion sharp) → release (fog up, value unbinds from action) → generate → recapture (the flinch flags a candidate — evaluate the batch now, fully) → link (abstract the parts noun-free; the map station) → close (finish or park, deposit either way) → tighten again.</p>
+
+<p>Inside generate, its own engine — <b>the piston</b>:</p>
+<p class="lede">dip (one novelty probed to threshold — a fixed anchor) → jump (the long reach, aimed by the abstracted wall) → dip (colonize the landing until the borrowed move is owned) → jump again. <span class="mk f">F</span> <span class="cite">s41467-026-68639-2 — the dip and the directed jump co-express in the best performers, in that order</span></p>
+<p>Each revolution of the piston extends the map by one owned region. Ranging without dipping = many contacts, no anchors. Dipping without jumping = persistence, never leaves the region.</p>
+
+<p>Feeding the whole machine, a supply line that is not a phase — <b>the intake</b>:</p>
+<p>a constant stream of inputs from outside your lane — books, paintings, films, music, rooms — because you can only jump to places you know. The map's reach is capped by what's been taken in; no dial setting substitutes for territory that isn't there. Intake obeys the production chain like everything else: what's taken in without a link sentence is leisure (allowed — label it); what leaves one sentence — <i>this and my work share X</i> — is map. Deep immersion in narrative is not a break from the work; it runs on the same machinery the work does. <span class="mk a">A</span></p>
+
+<p>One motion, run at three timescales: minutes (inner loop), weeks (outer loop, per piece), years (season loop, across pieces). The value is produced by the pass through, not by any setting held — every level-based result in the corpus shows an inverted-U, every time-based result shows this sequence; the same finding viewed statically and dynamically. <span class="mk c">C</span> <span class="cite">the unification; the halves are sourced below</span></p>
+
+<p>Getting better means four things, separately: deeper releases (how far the jumps travel), cleaner recaptures (a real selection event with output, never mixed into generation), flipping on the signal (the flinch and the click, not the clock, not discomfort), and running all three timescales on purpose.</p>
+
+<p class="pull">One signal governs the flip at every scale: is something accumulating? Only rejections → park / finish with debts / stay in breadth. Partial structure → persist / revise / commit.</p>
+
+<p class="note2">A vocabulary for indexing your own practice. Not a causal theory — no result could arrive and make &ldquo;fog&rdquo; correct, because fog isn&rsquo;t a claim. The test is whether the categories cut your work at joints you can act on differently.</p>
+<p class="note2">Marks: <span class="mk f">F</span> results read &middot; <span class="mk a">A</span> abstract only &middot; <span class="mk p">P</span> perspective/review &middot; <span class="mk c">C</span> my claim, no source.</p>
+
+<h2 id="d-four">Four parts</h2>
+<div class="dl"><b>Compass</b><span>what to value. An open problem you refuse to close.</span></div>
+<div class="dl"><b>Fog</b><span>how loudly value binds to action. A waveform, not a level — both flat settings are wrong. Evaluating every line collapses you onto the obvious; never evaluating underperforms.</span></div>
+<div class="dl"><b>Map</b><span>what&rsquo;s reachable.</span></div>
+<div class="dl"><b>Linking</b><span>finding what two things share happens on its own. Writing it down doesn&rsquo;t.</span></div>
+<p>Compass and fog are the content and the volume of one signal. Compass and map aren&rsquo;t fully independent — a wall that won&rsquo;t abstract is unreachable regardless of density.</p>
+
+<h3>The production chain — four stations, four products. Nothing skips a station:</h3>
+<div class="dl"><b>FOG makes ore</b><span>raw candidates, and noticed flinches (banked, not acted on). Fog&rsquo;s products are experiences — fog never writes.</span></div>
+<div class="dl"><b>EVALUATION makes parts</b><span>the pick, failure lines, candidate compasses. Everything containing a verdict is made here, out of fog&rsquo;s ore. This is the compass factory.</span></div>
+<div class="dl"><b>LINKING makes map</b><span>rung-3 sentences, bridges, axes — by abstracting evaluation&rsquo;s parts. A failure line is a part; its noun-free generalization is map.</span></div>
+<div class="dl"><b>CLOSE makes objects</b><span>finished things — the only items a criterion can test against.</span></div>
+<p>This resolves the recurring drift: &ldquo;compasses come from fog&rdquo; and &ldquo;compasses come from evaluation&rdquo; describe adjacent stations on one line — fog supplies the material, evaluation manufactures the compass. Even étude learning-lines obey the chain: noticed during play, written at the session-end mini-recapture. Anything written is downstream of fog.</p>
+
+<h2 id="d-routes">Two routes</h2>
+<p>Both produce creative work. <span class="mk a">A</span></p>
+<div class="dl"><b>Flexibility</b><span>broad search, switching across categories. Everything below is built for it.</span></div>
+<div class="dl"><b>Persistence</b><span>systematic, effortful, incremental probing within few categories. Sustained work is the mechanism, not a symptom. Generate-judge-generate is legitimate here — it is this route — when partial structure is accumulating.</span></div>
+<p>The stop rule stays, with a discriminator in front of it.</p>
+<p class="pull">Park it after ~25 minutes <span class="mk c">C</span> <span class="cite">the number</span> — unless something is actually accumulating. Only rejected candidates piling up → insight route. Park it. Partial structure piling up, the thing measurably further along → persistence route. Continue.</p>
+<p><b>Provenance:</b> the stop rule came from an insight-task result and its transfer was poor. It stays as an aimed corrective — the drift it opposes is revising past the peak and never closing. False as theory, correct as correction.</p>
+
+<h2 id="d-compass">Compass</h2>
+<h3>Three tests on the sentence</h3>
+<div class="num"><b>1 &middot; Exclude</b><span>Run it against a bounded set and count survivors. &gt;30% is a topic &middot; 5–30% works &middot; &lt;5% is too tight. <span class="mk c">C</span> <span class="cite">thresholds are calibration guesses; the direction is not</span></span></div>
+<div class="num"><b>2 &middot; Direct</b><span>Do you know what to do in the next five minutes?</span></div>
+<div class="num"><b>3 &middot; Terminate</b><span>Either can you say what would count as solved, or would you recognise it — the second only where you&rsquo;ve compared fifty of that kind. Recognition without training is stopping when tired, and it feels identical from inside.</span></div>
+<h3>One test on the outcome</h3>
+<div class="num"><b>4 &middot; Verify</b><span>Solve the stated conflict, then return to the original dissatisfaction. Flinch still there → the wall was misnamed. Back to naming, not to bridging. Verify applies to batch-picks too: &ldquo;best of the batch&rdquo; without verify can crown the least-bad near candidate.</span></div>
+<p><b>Shapes that work:</b> a conflict between two requirements, or a requirement the thing must meet. <i>Every exit line makes her cruel or weak, and she can be neither.</i></p>
+<p><b>Shapes that don&rsquo;t:</b> a topic (excludes nothing) &middot; an aspiration (no next move) &middot; a judgment (<i>it isn&rsquo;t original enough</i> — nothing named, nothing to violate).</p>
+<p>The third is a portrait: only an over-evaluator generates verdicts where a compass should be.</p>
+<p><i>Not original enough</i> decomposes on one push: <i>every route I have to this effect is one of about four moves, and I&rsquo;ve used all four.</i> Name the four.</p>
+<p class="pull">The failure mode is closing early with a plausible answer, not vagueness. A compass that resolves prematurely stops working, silently.</p>
+
+<h2 id="d-fog">Fog</h2>
+<p>The dial is graded, and each height is a different instrument:</p>
+<div class="fr"><b>Low</b><div><i>what happens</i> value binds loudly, every candidate checked fast</div><div><i>for</i> persistence route: refinement, density passes</div><div><i>results</i> correct, close to what exists</div></div>
+<div class="fr"><b>Mid</b><div><i>what happens</i> judgment softened, present</div><div><i>for</i> adjacent variations, most &ldquo;brainstorming&rdquo;</div><div><i>results</i> near-neighbors</div></div>
+<div class="fr"><b>High</b><div><i>what happens</i> value barely binds</div><div><i>for</i> the insight route; remote regions reachable</div><div><i>results</i> the only setting that exits your four moves</div></div>
+<div class="fr"><b>Past the wall&rsquo;s tolerance</b><div><i>what happens</i> the compass dissolves</div><div><i>for</i> you have changed modes — this is fog-alone play now; harvest sentences, don&rsquo;t pretend you&rsquo;re solving</div><div><i>results</i> map material</div></div>
+<p><b>Dosing rule:</b> match height to wall difficulty — high fog on an easy wall adds distraction and slows you down <span class="mk f">F</span> <span class="cite">s44271-025-00235-4, optimal exploration capacity scales with difficulty</span>. Sharpness sets fog tolerance: how high the dial can go while the compass survives is set by how sharp the wall statement is. To fog harder, sharpen the wall — never the admissible solution space. The height profile of a session is a craft object: mid until candidates repeat, spike high for the far jumps, drop for recapture.</p>
+<p><b>A working implementation of delay</b> <span class="mk c">C</span> <span class="cite">the rule</span> <span class="mk f">F</span> <span class="cite">the mechanism</span>: value counts only on the Nth try — e.g., nothing before the 15th candidate counts. This reproduces the delayed-reward condition that produced directed exploration where per-choice reward erased it <span class="cite">s41467-026-68639-2</span>. Caution: if you catch yourself counting (&ldquo;that was 7 of 15&rdquo;), the counting has become the evaluator&rsquo;s job — use a page-count or timer instead.</p>
+<p><b>Why not generate-judge-generate</b> (on the insight route): each judgment re-binds value to the next choice (the SNR mechanism — you can&rsquo;t hold the gain down while repeatedly exercising it), and each judgment resets the walk to length one — distance can only accumulate over unjudged steps, and insight tracks cumulative distance. Tested directly: per-choice evaluation didn&rsquo;t reduce directed exploration, it erased it. <span class="mk f">F</span> The judgment isn&rsquo;t lost in batching — it&rsquo;s deferred, then done fully. Deferring is not suppressing: a mid-stream flinch (<i>too on the nose</i>) gets noted and banked, not argued with — that&rsquo;s delay keeping the criterion available; occlusion would mean never forming it.</p>
+<h3>Four mechanisms that behave differently</h3>
+<div class="dl"><b>Delay</b><span>signal intact, action blocked until the end — the only one with a direct creative-task result</span></div>
+<div class="dl"><b>Occlude</b><span>never form the judgment; can&rsquo;t recover it — untested</span></div>
+<div class="dl"><b>Attenuate</b><span>lower the gain on signal→action — bandit tasks, but the drift-rate/SNR result (s41598-021-82530-8) is this mechanism; strongest process-level anchor in the corpus</span></div>
+<div class="dl"><b>Degrade</b><span>damage the comparator — load, fatigue. Costly, different operation</span></div>
+<p class="pull">The check: can you still reject? Put a candidate up and see if you get a differential reaction. Indifference means gain is at zero and you&rsquo;re drifting.</p>
+<p><b>Fog is not fatigue.</b> Attentional lapses are local sleep-like waves — degraded control, not lowered gain. <span class="mk a">A</span> <span class="cite">s41467-021-23890-7</span> A tired session that skips evaluation is drift with the comparator offline. Rested is a precondition.</p>
+
+<h2 id="d-dip">The deep-dip</h2>
+<p class="note2">(v1.1 called this &ldquo;chunking&rdquo;; renamed — the memory sense of chunking is the result, not the act.)</p>
+<p>When one move flickers during generation — the trigger is a <b>double flicker</b>, the same move arriving twice unbidden — stop ranging and probe that move repeatedly: five or so variations in a row. Then return to ranging.</p>
+<div class="dl"><b>Why</b><span>explorers who probed one novelty to a threshold before ranging showed stronger directed exploration afterward and better outcomes than pure rangers — the behaviours co-express; it isn&rsquo;t a trade. <span class="mk f">F</span> <span class="cite">s41467-026-68639-2</span> A jump measured from a stable landmark is informative; a jump from a blur is noise.</span></div>
+<div class="dl"><b>Length</b><span>until you could state what the move buys and what it costs — roughly, when you can predict the next variant&rsquo;s quality before writing it.</span></div>
+<div class="dl"><b>End</b><span>back to ranging or to evaluation. The dip must not become the session.</span></div>
+<div class="dl"><b>Deposit</b><span>one sentence — <i>residue works when X, fails when Y</i>. A deep-dip that leaves no sentence spent the reps. (The five probes compress into one known unit with edges — this is where the memory sense of chunking is manufactured.)</span></div>
+<div class="dl"><b>The corrective it aims at</b><span>the switching-biased failure mode of ten one-touch contacts, nothing stabilized. Try the weird thing five times before trying five weird things.</span></div>
+
+<h2 id="d-map">Map</h2>
+<p><b>Density</b> — many links inside a category, from depth-first study and deep-dips. <b>Bridges</b> — a few long edges between distant regions. A bridge is an edge; it&rsquo;s just a long one. Size isn&rsquo;t the variable.</p>
+<p>Distance is measured on your map, not the world&rsquo;s taxonomy. Two consequences: within-domain far jumps exist (your own periphery, dead conventions, inverted assumptions — check it before reaching for a new domain; it&rsquo;s usually not exhausted, just unfashionable to you). And a well-built second domain stops being far — the point of fifty-compared is that it installs permanent bridges, converting a class of far jumps into near moves and relocating the frontier. A new domain is where far jumps come from before the bridge exists; after, it&rsquo;s infrastructure.</p>
+<p class="pull">Easy fog grows density; hard walls grow bridges. They come from different sessions.</p>
+<p>You can only bridge to places you know. One domain means every solution comes from inside it, which is what <i>unoriginal</i> actually means.</p>
+
+<h2 id="d-link">Linking</h2>
+<p><b>The ladder:</b> attribute (<i>both are wary of people</i> — generates nothing) → relation (<i>the individual is expendable to the group</i>) → process (<i>order maintained by never naming the threat</i>).</p>
+<p>Function is a separate axis, not a fourth rung. For structural problems, rung 3 is the target.</p>
+<p><b>Test 1:</b> strip the nouns. Survives with both things removed → above rung one. <b>Test 2:</b> does it tell you what happens in scene four? A real abstraction creates obligations.</p>
+<p>Push étude learnings up the ladder before writing them down. <i>&ldquo;Stillness at the top of a scene adds tension&rdquo;</i> is noun-bound; <i>&ldquo;tension is an expected discharge, withheld&rdquo;</i> deposits ten edges instead of one.</p>
+<p><b>Sandbox learnings are hypotheses.</b> A principle from wall-less play has unknown failure conditions. Pipeline: étude proposes → the next draft deploys → the failure line, if it comes, is the verified deposit. Play proposes; the piece disposes.</p>
+<p><b>Other ways to link:</b> shared function &middot; relational analogy &middot; contrast (same except in one respect — how axes are derived) &middot; causal &middot; boundary condition.</p>
+<p><b>What to bridge between:</b> your abstracted wall and a domain where that abstraction is already solved. A bridge without a wall is decoration — <i>when solving</i>. Wall-less linking that deposits sentences is map work, not decoration; the decoration charge applies to bridging as a substitute for solving.</p>
+<h2 id="d-modes">The modes</h2>
+<p>The loop is the compound machine, but every operation runs standalone as a drill. Know which you&rsquo;re running; drifting between them unlabeled is how sessions produce nothing.</p>
+<div class="fr"><b>Fog-alone (étude)</b><div><i>what</i> generation with no wall: ten variants of a working beat, batched, unjudged, across 3–4 moves with one deep-dip; or the ordinary/random/balanced drill on one idea</div><div><i>grows</i> density; fog tolerance itself (the only mode where the fog probe measures unconfounded)</div><div><i>fails when exclusive</i> the decade baseline — pleasant, non-compounding — unless sentences leave the session</div></div>
+<div class="fr"><b>Compass-alone</b><div><i>what</i> naming without solving: precise verdicts on your drafts and others&rsquo; work, walls stated as conflicts, no fixing</div><div><i>grows</i> the criterion (problem-finding predicted originality and career outcomes <span class="mk a">A</span>)</div><div><i>fails when exclusive</i> verdicts pile up untested; a wall never assaulted can be misnamed for years. The over-evaluator&rsquo;s comfort food — ration it</div></div>
+<div class="fr"><b>Linking-alone</b><div><i>what</i> the notebook session: abstracting accumulated material up the ladder</div><div><i>grows</i> the map</div><div><i>fails when exclusive</i> edges to nowhere if nothing is ever deployed</div></div>
+<div class="fr"><b>Closing-alone</b><div><i>what</i> finishing at volume, small things</div><div><i>grows</i> execution; objects for the criterion</div><div><i>fails when exclusive</i> polished output, static map</div></div>
+<div class="fr"><b>The loop</b><div><i>what</i> all four coupled</div><div><i>grows</i> the only configuration that solves walls and manufactures compasses</div></div>
+<p class="pull">One rule survives every mode: something written leaves the session.</p>
+
+<h2 id="d-loop">The loop</h2>
+<h3>Inner — minutes, many times per piece</h3>
+<p class="lede">name the wall as a conflict → fog up → batch (deep-dip the double-flicker, link-in-fog: abstract the wall and range toward domains where it&rsquo;s solved) → evaluate the batch at once → verify the pick → link the parts (push failure lines and link sentences up the ladder) → close the beat (fixed, or parked with the placeholder version written) → gap → next wall</p>
+<div class="num"><b>1</b><span>Attempt it straight, rules on, until genuinely stuck.</span></div>
+<div class="num"><b>2</b><span>Name the wall as a conflict.</span></div>
+<div class="num"><b>3</b><span>Fog, aimed at the wall, height matched to difficulty. Delay evaluation to the end of the sequence (the Nth-try rule).</span></div>
+<div class="num"><b>4</b><span>Deep-dip whatever flickers twice; then range far — linking as a generation move: abstract the wall until noun-free, jump via a domain where that abstraction is already solved.</span></div>
+<div class="num"><b>5</b><span>Evaluate the batch. Verify the pick against the original dissatisfaction.</span></div>
+<div class="num"><b>6</b><span>Link the parts: the failure lines and link sentences get pushed up the ladder before banking — one noun-free sentence deposits ten edges. (Linking appears twice in this loop: inside fog as the bridge move, here as the abstraction station.)</span></div>
+<div class="num"><b>7</b><span>Close: fix, or park with the failure line written — parking on a bare verdict banks nothing. The failure lines are next session&rsquo;s compasses.</span></div>
+<div class="num"><b>8</b><span>Gap — a real break after a real attempt, not filled with something demanding.</span></div>
+
+<h3>Outer — weeks, once per piece</h3>
+<p class="lede">piece compass (what this piece is for) → draft whole, straight through — walls marked in one bracket line and skipped, nothing solved mid-stream → return pass: triage → inner loops on the real walls only → your own verdict, said aloud → the room → finish → next piece</p>
+<div class="dl"><b>Mark, don&rsquo;t solve, mid-draft</b><span>One bracket naming the flinch — <i>[sound too hot for the curve]</i> — and keep moving. Naming is allowed mid-stream; solving is not.</span></div>
+<div class="dl"><b>The finished draft changes what the walls are</b><span>Half the beats that felt broken read fine in context; the verify test needs the whole object. This is why scene-first isn&rsquo;t just permitted but better.</span></div>
+<div class="dl"><b>Triage</b><span>cheap fixes in-line (that is finishing) &middot; coupled walls — fix the one whose failure explains the most others; expect some to dissolve &middot; real walls (only rejections accumulate) get the inner loop — capped at one deep loop per scene per pass.</span></div>
+<div class="dl"><b>Ship with debts</b><span>Every other real wall gets the placeholder version written, the failure line banked, and the scene closes anyway. A scene closed with two known debts is finished in every way that matters; a scene held open until every beat is right is where neither play nor finishing happens.</span></div>
+<div class="dl"><b>Fatten the ends, starve the middle</b><span>play lives in the draft, finishing lives in the close; the two things that are neither are per-candidate judgment during generation and open-ended wall-grinding during revision.</span></div>
+
+<h3>Season — years, across pieces</h3>
+<p class="lede">breadth (pieces that deliberately differ) → the catch (one direction produces differential flinch AND accumulating structure — the stop-rule discriminator at career scale) → commitment (the next N pieces exploit it, narrowing hard)</p>
+<p>The one career-scale result: streaks of high-impact work begin at the transition from exploration to committed exploitation — neither phase alone beats baseline. <span class="mk f">F</span> <span class="cite">s41467-021-25477-8</span> Cannot be run per-piece; it is run across them.</p>
+<p>The loops nest by feeding closes upward: closed beats make pieces finishable; finished pieces are the only things a season can compare; the season&rsquo;s catch re-aims the next piece compasses.</p>
+
+<h3>When inner step 5 fails — three causes, opposite actions</h3>
+<div class="fr"><b>Wall misnamed</b><div><i>signal</i> conflict solved, flinch remains</div><div><i>action</i> back to naming</div></div>
+<div class="fr"><b>Map too sparse</b><div><i>signal</i> can&rsquo;t name domains where the rung-3 abstraction is solved</div><div><i>action</i> second domain — a year, not an hour</div></div>
+<div class="fr"><b>Link bad or wrong altitude</b><div><i>signal</i> can name domains, nothing fits</div><div><i>action</i> keep going, or re-abstract</div></div>
+<p class="pull">Three domains reached → linking problem. Zero after a genuine try → map problem. One or two → fog and try again.</p>
+
+<h2 id="d-train">The training</h2>
+<p>This is habit formation, not deliberate practice.</p>
+<p>Deliberate practice needs a well-defined task, immediate informative feedback, repetition with error correction. <i>Don&rsquo;t judge mid-stream</i> has none of those. And the deliberate-practice numbers run the wrong way: ~26% of variance in games, 21% music, 18% sports, 4% education, under 1% professions. Directing is the unstructured end. <span class="mk a">A</span></p>
+<p>What fits is habit: a behavioural rule, in a consistent context, on a cue. Median ~66 days to automaticity, range 18 to 254, cue consistency the main driver, missing a single day doesn&rsquo;t break the curve. <span class="mk a">A</span></p>
+<ul>
+<li>Repetition-in-context predicts acquisition. Comprehension doesn&rsquo;t. <b>Rereading this document does nothing. Running the loop does.</b></li>
+<li>A quarter is roughly the right probe length.</li>
+<li>Missing days cost nothing — no streaks anywhere in this.</li>
+</ul>
+<h3>Which operations can improve, and which can&rsquo;t</h3>
+<div class="fr"><b>Compass</b><div><i>error signal</i> solve the stated conflict — does the flinch go?</div><div><i>trainable</i> yes</div></div>
+<div class="fr"><b>Linking</b><div><i>error signal</i> does the sentence tell you what happens in scene four?</div><div><i>trainable</i> yes</div></div>
+<div class="fr"><b>Map</b><div><i>error signal</i> can you name three domains?</div><div><i>trainable</i> yes</div></div>
+<div class="fr"><b>Fog</b><div><i>error signal</i> none</div><div><i>trainable</i> not as it stands</div></div>
+<p>To make fog trainable, give it an error signal. One binary at session end: <i>did I evaluate mid-stream — yes or no.</i> Scored on behaviour, not output. Rested sessions only — a tired session skipping evaluation is drift, not fog, and logging it corrupts the curve. Noting-and-banking a flinch does not count as evaluating; acting on it does.</p>
+<p class="pull">The operations with signals improve. What they operate on improves regardless — and that&rsquo;s where most of the growth is.</p>
+<div class="fr"><b>A link sentence — <i>these two share X</i></b><div><i>grows</i> the map</div><div><i>half</i> novelty</div></div>
+<div class="fr"><b>A failure line — <i>X fails when Y</i></b><div><i>grows</i> the criterion — and it is next session&rsquo;s compass, pre-written</div><div><i>half</i> appropriateness</div></div>
+<div class="fr"><b>A finished thing</b><div><i>grows</i> execution, and the only object a criterion can test against</div><div><i>half</i> both</div></div>
+<h3>What grows what</h3>
+<div class="dl"><b>Map</b><span>fifty of one kind compared in pairs, axes written. One second domain, known structurally. Deep-dips. Études. Slowest, largest ceiling.</span></div>
+<div class="dl"><b>Criterion</b><span>finishing things. Failure lines. Your verdict said aloud before reading anyone else&rsquo;s; your taste is the delta.</span></div>
+<div class="dl"><b>Execution</b><span>finishing at volume. Density passes. Following an implication past where it stops being fun.</span></div>
+<h2 id="d-daily">The daily practice</h2>
+<p class="pull">One message a day, to one person. The voice memo, one link sentence, one failure line. A folder is self-imposed; a person isn&rsquo;t.</p>
+<p>Intake runs continuously and cheaply: something from outside your lane always in progress; the only rule is one link sentence per finished intake — <i>this and my work share X</i> — or it was leisure, which is fine, labeled. The intake sentence can be the daily message.</p>
+<p>Everything else attaches to a date that already exists — predictions to a screening, transcription to the day before a shoot, wall-naming to whenever you&rsquo;re actually stuck.</p>
+<p><b>Weekly:</b> one delivery of a finished thing to two or three people.</p>
+<p><b>Session shape (typical):</b> draft loose (the play) &middot; one étude (more play) &middot; short return pass &middot; at most one deep wall &middot; deposits out.</p>
+<p><b>Never:</b> reread today&rsquo;s pages &middot; open old scripts before starting &middot; judge anything mid-draft (mark it and move).</p>
+<h3>Two probes, one quarter</h3>
+<div class="num"><b>1</b><span>Does the second deposit change anything? A decade of sentences-without-closure is the baseline. Run closure for a quarter and compare.</span></div>
+<div class="num"><b>2</b><span>Is fog trainable? The binary, logged at session end, rested sessions only. Yes-rate falls over a quarter → fog has a learning curve. Doesn&rsquo;t move → fog is a state you enter or don&rsquo;t.</span></div>
+
+<h2 id="d-src">Sources</h2>
+<h3><span class="mk f">F</span> results read</h3>
+<div class="src"><b>s42003-024-06405-0</b><span>novelty ← association, appropriateness ← executive control, independent. n=1509</span></div>
+<div class="src"><b>s41467-026-68639-2</b><span>directed exploration under delayed reward, absent under per-choice; initial repeated sampling of one option to threshold (the deep-dip), then uncertainty-directed jumps — co-expressed in the best performers</span></div>
+<div class="src"><b>s41467-021-25477-8</b><span>exploration→exploitation sequence, 13.8–20.5%; either half alone below baseline</span></div>
+<div class="src"><b>s44271-025-00235-4</b><span>fixation did not change Aha rate (BF₁₀=0.10); distance predicted it, attempt-count didn&rsquo;t; optimal exploration capacity scales with difficulty</span></div>
+<div class="src"><b>s41598-021-82530-8</b><span>drift change larger than threshold change; both may underlie</span></div>
+<div class="src"><b>s42003-025-07470-9</b><span>switching → creativity, g=0.174, small</span></div>
+<div class="src"><b>s41598-019-46761-0</b><span>looser attention → longer semantic search distances, better performance</span></div>
+<div class="src"><b>s41380-021-01403-8</b><span>stimulation reduced fluency, not originality. <b>Flag:</b> the published abstract reports a site effect (DMN nodes reduced fluency, control sites didn&rsquo;t). &ldquo;Site effect null&rdquo; stands only if the full-text interaction statistic supports it — retrieve before citing against the DMN account</span></div>
+<div class="src"><b>s41598-025-31146-3</b><span>psychological distance aided insight problems, not generation</span></div>
+<h3><span class="mk a">A</span> abstract</h3>
+<p class="srcp">Sio &amp; Ormerod 2009 — incubation, 117 studies, d=0.29; longer preparation → larger effect; demanding interpolated task → smaller &middot; Getzels &amp; Csikszentmihalyi — problem-finding predicted rated originality and career outcomes; n=31, no replication in fifty years &middot; Nijstad et al. — Dual Pathway &middot; Mullen et al. 1991 — nominal groups beat interactive ones (not a sequencing result) &middot; srep10964 coupling &middot; s41598-021-97215-5 knowledge narrows attention &middot; s44271-025-00214-9 cross-modal consistency of representational structure &middot; s41467-021-23890-7 attentional lapses are local sleep-like waves — grounds the fog/fatigue distinction &middot; s42003-025-07913-3 ordinary/random/creative instructions are neurally distinct — grounds the three-point étude drill.</p>
+<h3><span class="mk p">P</span> perspective</h3>
+<p class="srcp">s44159-023-00158-z controlled retrieval &middot; s42003-025-08612-9 intuition.</p>
+
+<h2 id="d-rests">What this rests on</h2>
+<p><b>Strongest:</b> the novelty/appropriateness split, and the exploration-then-exploitation sequence.</p>
+<p><b>A bet:</b> density and short paths predicting creativity is cross-sectional — more- vs less-creative people, not before-vs-after in one person.</p>
+<p><span class="mk c">C</span><b>, and worth knowing:</b> <i>impasse is substrate</i> has no measured support; the compass tests (including thresholds), the ~25-minute number, the Nth-try rule&rsquo;s N, the ladder, the two-state separation, the one-deep-loop-per-scene cap, and the mode taxonomy are craft. The corpus is single-publisher, one retrieval path.</p>
+<p class="pull">Nothing comparable is better supported. There is no multi-component intervention trial on working creatives, for this or anything in any book on the subject. The only evidence that will bear on whether it works for you is evidence you generate.</p>
+
+<h2 id="d-ver">Versions</h2>
+<div class="src"><b>v1.2.2</b><span>the piston (dip→jump→dip) made an explicit sub-cycle inside generate; the intake added as a standing supply line (not a phase) with its deposit rule, and to the daily practice.</span></div>
+<div class="src"><b>v1.2.1</b><span>the production chain (fog→ore, evaluation→parts, linking→map, close→objects) replaces the compass-factory paragraph, resolving the fog-vs-evaluation compass dispute as adjacent stations; linking restored to the inner loop in both its positions (bridge move inside fog, abstraction station after evaluation) after being absorbed into &ldquo;deposit&rdquo; in the v1.2 rewrite.</span></div>
+<div class="src"><b>v1.2</b><span>changes from v1.1: fog dial made graded (four heights, dosing rule, session height-profile) with the mode-boundary rule (past the wall&rsquo;s tolerance = fog-alone, relabel and harvest); the Nth-try rule added as a delay implementation; the generate-judge-generate argument added with its three mechanisms and the persistence-route exception; noted-flinch vs acted-flinch distinction added to delay and to the fog probe; chunking renamed deep-dip with trigger/length/end/deposit rules; within-domain far jumps and the domain-conversion point added to Map; hypothesis pipeline (étude proposes, piece disposes) and ladder-push added to Linking; the modes table added (four standalone drills + failure-when-exclusive); inner loop rewritten with verify-the-pick and park-with-failure-line; outer loop rewritten scene-first (mark-don&rsquo;t-solve, triage, one-deep-loop cap, ship with debts, fatten-the-ends); season loop given the catch discriminator and nesting; compass-factory rule stated once at the top of Four Parts after drifting three times in conversation; étude drill sourced to the storytelling result.</span></div>
+<p class="note2" style="margin-top:18px">v1.2.2 &middot; a reference, not a task list. Rereading it does nothing; running the loop does.</p>
+</div>
   </div>
   <div class="pane" id="pane-lib">
     <input id="libSearch" placeholder="search everything…" oninput="renderLib()">
@@ -645,6 +899,18 @@ function solvedSave(){
   save(); $('solved').classList.remove('on'); renderLib();
 }
 function pane(n,el){ document.querySelectorAll('.pane').forEach(p=>p.classList.remove('on')); document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on')); $('pane-'+n).classList.add('on'); el.classList.add('on'); SCOPE=(n==='model')?'m':'w'; renderCompass(); }
+/* the document is a reading surface; the stream is the capture one. Kept apart
+   because reading and writing about the model are different sittings. */
+var MDMODE = 'doc';
+function modelMode(m){
+  MDMODE = m;
+  $('modelDoc').style.display  = (m === 'doc' ? 'block' : 'none');
+  $('modelWork').style.display = (m === 'doc' ? 'none' : 'block');
+  $('mdDocBtn').className    = 'btn' + (m === 'doc' ? ' primary' : '');
+  $('mdStreamBtn').className = 'btn' + (m === 'doc' ? '' : ' primary');
+  if(m !== 'doc') renderModel();
+  window.scrollTo(0,0);
+}
 function renderModel(){
   const items=DB.entries.filter(e=>e.sc==='m').slice(-80);
   $('modelStream').innerHTML=items.map(e=>{
@@ -1176,6 +1442,51 @@ function dragStop(commit){
 document.addEventListener('pointermove',dragMove,{passive:false});
 document.addEventListener('pointerup',()=>dragStop(true));
 document.addEventListener('pointercancel',()=>dragStop(false));
+
+/* ---- out to a screenplay app ----
+   Fountain is plain text and Fade In imports it directly. Scene text goes out
+   verbatim — no headings are invented, because guessing INT./EXT. would put
+   words in the script that were never written. Each title rides along inside a
+   boneyard comment, which every Fountain parser drops, so the pasted result is
+   exactly the prose and nothing else. */
+function orderAsFountain(){
+  flushPending();
+  const o=ensureOrder(), by={};
+  DB.drafts.forEach(d=>by[d.id]=d);
+  const parts=[];
+  o.seq.forEach(id=>{
+    const d=by[id]; if(!d) return;
+    const title=String(d.title||'untitled').replace(/\*\//g,'* /');
+    /* only the title sits inside the comment, so only the title needs escaping —
+       the prose is outside it and must go out exactly as written */
+    const txt=String(d.txt||'').replace(/\r\n?/g,'\n').trim();
+    parts.push('/* '+title+' */\n\n'+txt);
+  });
+  return parts.join('\n\n\n');
+}
+function orderFileName(){
+  const o=ensureOrder();
+  const n=String(o.name||'order').replace(/[^\w\- ]+/g,'').trim().replace(/\s+/g,'_');
+  return (n||'order')+'.fountain';
+}
+function copyOrder(){
+  const txt=orderAsFountain();
+  if(!txt.trim()){ alert('Nothing in this order to copy.'); return; }
+  const fallback=()=>{
+    alert('Could not reach the clipboard — sending it as a file instead.');
+    deliver(txt, orderFileName(), 'text/plain');
+  };
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt)
+      .then(()=>alert(ensureOrder().name+' copied — paste into Fade In.'))
+      .catch(fallback);
+  } else fallback();
+}
+function exportFountain(){
+  const txt=orderAsFountain();
+  if(!txt.trim()){ alert('Nothing in this order to export.'); return; }
+  deliver(txt, orderFileName(), 'text/plain');
+}
 
 function readThrough(){
   flushPending();
