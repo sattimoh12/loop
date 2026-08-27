@@ -62,7 +62,16 @@
   .note { font-size:11px; color:var(--dim); margin:6px 0; line-height:1.5; }
   h3 { font-size:11px; letter-spacing:2px; color:var(--acc); margin:14px 0 5px; }
   /* panes */
-  .tabs { display:flex; gap:12px; border-bottom:1px solid var(--line); padding:8px 0; font-size:11px; letter-spacing:2px; }
+  .tabs { display:flex; gap:12px; border-bottom:1px solid var(--line); padding:8px 0; font-size:11px; letter-spacing:2px;
+          overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+  .tabs::-webkit-scrollbar { display:none; }
+  .tab { flex:0 0 auto; }
+  /* pairs */
+  .pcard { border:1px solid var(--line); border-radius:10px; padding:14px; margin:8px 0; font-size:16px; line-height:1.45; color:var(--ink); }
+  .pcard .n { font-size:10px; letter-spacing:2px; color:var(--dim); display:block; margin-bottom:6px; }
+  .pvs { text-align:center; font-size:10px; letter-spacing:3px; color:var(--acc); margin:2px 0; }
+  .pitem { display:flex; gap:8px; align-items:flex-start; padding:6px 0; border-top:1px solid var(--line); font-size:14px; }
+  .pitem .x { color:var(--dim); cursor:pointer; padding:0 4px; }
   .tab { color:var(--dim); cursor:pointer; } .tab.on { color:var(--acc); }
   .pane { display:none; } .pane.on { display:block; }
   #libSearch { width:100%; background:var(--panel); border:1px solid var(--line); border-radius:8px; color:var(--ink); font-size:14px; padding:8px 12px; outline:none; font-family:inherit; margin:8px 0; }
@@ -158,6 +167,7 @@
     <span class="tab on" onclick="pane('stream',this)">STREAM</span>
     <span class="tab" onclick="pane('draft',this);renderDraft()">STRAIGHT</span>
     <span class="tab" onclick="pane('model',this);modelMode(MDMODE)">MODEL</span>
+    <span class="tab" onclick="pane('pairs',this);renderPairs()">PAIRS</span>
     <span class="tab" onclick="pane('lib',this);renderLib()">LIBRARY</span>
     <span class="tab" onclick="pane('refs',this);renderRefs()">REFS</span>
     <span class="tab" onclick="pane('data',this);renderData()">DATA</span>
@@ -418,13 +428,22 @@
 <p class="note2" style="margin-top:18px">v1.2.2 &middot; a reference, not a task list. Rereading it does nothing; running the loop does.</p>
 </div>
   </div>
+  <div class="pane" id="pane-pairs">
+    <div class="note">Fifty of one kind, compared in pairs, the axes written down. Put a closed set in — exit lines, endings, openings, cuts — and it walks the combinations in a fixed order. It never picks which two are interesting; that would be doing the finding for you. It only stops you skipping.</div>
+    <div class="ctl">
+      <select id="setSel" onchange="pickSet(this.value)" style="background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px;max-width:52%"></select>
+      <button class="btn" onclick="newSet()">＋ new set</button>
+      <button class="btn" onclick="setMode(PMODE==='fill'?'compare':'fill')" id="pModeBtn">compare</button>
+    </div>
+    <div id="pairsBody"></div>
+  </div>
   <div class="pane" id="pane-lib">
     <input id="libSearch" placeholder="search everything…" oninput="renderLib()">
     <div class="filterRow" id="libF">
       <span class="on" data-f="wall">WALLS</span><span class="on" data-f="fail">FAILURE LINES</span>
       <span class="on" data-f="link">LINKS</span><span class="on" data-f="intake">INTAKE</span>
       <span class="on" data-f="hyp">HYPOTHESES</span><span data-f="cand">FOG</span>
-      <span class="on" data-f="solved">SOLVED ELSEWHERE</span>
+      <span class="on" data-f="solved">SOLVED ELSEWHERE</span><span class="on" data-f="axis">AXES</span>
     </div>
     <div class="ctl"><button class="btn" onclick="solvedOpen()">＋ log a wall solved elsewhere</button></div>
     <div id="libList"></div>
@@ -600,7 +619,7 @@ const today=()=>new Date().toISOString().slice(0,10);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 let chipPrefix='', timer={len:0,rem:0,id:null}, testingIdx=null;
 
-const TYPES={wall:{tag:'WALL',cls:'wall'},cand:{tag:'',cls:'cand'},flinch:{tag:'FLINCH · banked, not acted on',cls:'flinch'},link:{tag:'LINK',cls:'link'},intake:{tag:'INTAKE',cls:'intake'},hyp:{tag:'HYPOTHESIS · untested',cls:'hyp'},fail:{tag:'FAILS WHEN → candidate compass',cls:'fail'},eval:{tag:'EVAL',cls:'evalE'},solved:{tag:'SOLVED ELSEWHERE',cls:'solvedE'}};
+const TYPES={wall:{tag:'WALL',cls:'wall'},cand:{tag:'',cls:'cand'},flinch:{tag:'FLINCH · banked, not acted on',cls:'flinch'},link:{tag:'LINK',cls:'link'},intake:{tag:'INTAKE',cls:'intake'},hyp:{tag:'HYPOTHESIS · untested',cls:'hyp'},fail:{tag:'FAILS WHEN → candidate compass',cls:'fail'},eval:{tag:'EVAL',cls:'evalE'},solved:{tag:'SOLVED ELSEWHERE',cls:'solvedE'},axis:{tag:'AXIS',cls:'link'}};
 
 function parse(v){
   if(v.startsWith('>')) return ['wall',v.slice(1).trim()];
@@ -792,7 +811,7 @@ function renderLib(){
   const q=($('libSearch').value||'').toLowerCase();
   const on=f=>document.querySelector(`#libF [data-f="${f}"]`).classList.contains('on');
   const hit=t=>!q||t.toLowerCase().includes(q);
-  const secs=[['wall','COMPASS — walls, tap to load',e=>e.ty==='wall'],['cand','FOG — picks & flinches (search reaches all)',e=>(e.ty==='cand'&&(q||e.state==='picked'))||e.ty==='flinch'],['link','LINKS',e=>e.ty==='link'],['fail','FAILURE LINES — tap to load as compass',e=>e.ty==='fail'],['intake','INTAKE LINKS',e=>e.ty==='intake'],['hyp','HYPOTHESES',e=>e.ty==='hyp'],['solved','SOLVED ELSEWHERE — conflicts with a resolution attached',e=>e.ty==='solved']];
+  const secs=[['wall','COMPASS — walls, tap to load',e=>e.ty==='wall'],['cand','FOG — picks & flinches (search reaches all)',e=>(e.ty==='cand'&&(q||e.state==='picked'))||e.ty==='flinch'],['link','LINKS',e=>e.ty==='link'],['fail','FAILURE LINES — tap to load as compass',e=>e.ty==='fail'],['intake','INTAKE LINKS',e=>e.ty==='intake'],['hyp','HYPOTHESES',e=>e.ty==='hyp'],['solved','SOLVED ELSEWHERE — conflicts with a resolution attached',e=>e.ty==='solved'],['axis','AXES — from pairs',e=>e.ty==='axis']];
   let html='';
   const wallsExtra=DB.compassLog.filter(w=>hit(w.t)).map(w=>({t:w.t,ty:'wall',d:w.d}));
   secs.forEach(([f,title,fn])=>{
@@ -1155,8 +1174,9 @@ function exportMd(){
       '\n**'+longDay(k)+'**\n'+days[k].map(e=>'- '+mark(e)+body(e)+'\n').join('')
     ).join('');
   };
-  const LABEL={wall:'Walls',fail:'Failure lines',link:'Links',solved:'Solved elsewhere',
-               intake:'Intake',hyp:'Hypotheses',cand:'Fog / candidates',flinch:'Flinches',eval:'Evals'};
+  const LABEL={wall:'Walls',fail:'Failure lines',link:'Links',axis:'Axes — from pairs',
+               solved:'Solved elsewhere',intake:'Intake',hyp:'Hypotheses',
+               cand:'Fog / candidates',flinch:'Flinches',eval:'Evals'};
 
   md+='\n## Working stream\n';
   Object.keys(LABEL).forEach(ty=>{
@@ -1507,6 +1527,96 @@ function readThrough(){
 document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='hidden') flushPending(); });
 addEventListener('pagehide',flushPending);
 addEventListener('blur',flushPending);
+
+/* ---------- PAIRS ----------
+   Contrast is how axes get derived, and it is the one operation in the model
+   with no tool. The set is closed and yours; the walk is a fixed index order,
+   never a choice about which two are worth putting together — selecting the
+   interesting pair is the finding, and the app has no business doing it. */
+DB.sets = DB.sets || [];
+var PMODE = 'fill';
+function setsHere(){ return DB.sets.map((x,i)=>({x,i})).filter(o=>o.x.ar===DB.arena); }
+function curSet(){
+  const here = setsHere();
+  if(!here.length) return null;
+  let s = DB.sets[DB.setCur];
+  if(!s || s.ar !== DB.arena) { s = here[here.length-1].x; DB.setCur = here[here.length-1].i; }
+  s.items = s.items || []; s.done = s.done || {};
+  return s;
+}
+function newSet(){
+  const n = (prompt('A set of one kind — exit lines, endings, openings?')||'').trim();
+  if(!n) return;
+  DB.sets.push({id:'st'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),
+                name:n, ar:DB.arena, items:[], done:{}});
+  DB.setCur = DB.sets.length-1; PMODE='fill'; save(); renderPairs();
+}
+function pickSet(i){ DB.setCur = parseInt(i,10); save(); renderPairs(); }
+function setMode(m){ PMODE = m; renderPairs(); }
+function addItem(){
+  const s = curSet(); if(!s) return;
+  const el = $('pItemIn'), v = (el.value||'').trim(); if(!v) return;
+  v.split('\n').map(x=>x.trim()).filter(Boolean).forEach(t=>{
+    s.items.push({id:'it'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), t:t});
+  });
+  el.value=''; save(); renderPairs(); el.focus();
+}
+function delItem(id){
+  const s = curSet(); if(!s) return;
+  s.items = s.items.filter(x=>x.id!==id);
+  Object.keys(s.done).forEach(k=>{ if(k.indexOf(id)>-1) delete s.done[k]; });
+  save(); renderPairs();
+}
+function pairKey(a,b){ return a<b ? a+'|'+b : b+'|'+a; }
+function nextPair(s){
+  for(let i=0;i<s.items.length;i++)
+    for(let j=i+1;j<s.items.length;j++){
+      const k = pairKey(s.items[i].id, s.items[j].id);
+      if(!s.done[k]) return {a:s.items[i], b:s.items[j], k:k};
+    }
+  return null;
+}
+function skipPair(){
+  const s = curSet(), p = nextPair(s); if(!p) return;
+  s.done[p.k] = 'skipped'; save(); renderPairs();
+}
+function saveAxis(){
+  const s = curSet(), p = nextPair(s); if(!s||!p) return;
+  const v = ($('pAxis').value||'').trim();
+  if(!v){ alert('The axis is the deposit. Skip it if nothing is there.'); return; }
+  s.done[p.k] = v;
+  addEntry('axis', v, false);          /* the sentence leaves the session */
+  $('pAxis').value=''; save(); renderPairs();
+}
+function renderPairs(){
+  const here = setsHere(), s = curSet();
+  $('setSel').innerHTML = here.map(o=>`<option value="${o.i}" ${DB.sets[DB.setCur]===o.x?'selected':''}>${esc(o.x.name)}</option>`).join('')
+    || '<option>— no sets yet —</option>';
+  $('pModeBtn').textContent = PMODE==='fill' ? 'compare →' : '← the set';
+  if(!s){ $('pairsBody').innerHTML='<div class="note">No set yet. One kind of thing, gathered in one place — then the pairs.</div>'; return; }
+
+  const compared = Object.keys(s.done).length;
+  if(PMODE==='fill'){
+    $('pairsBody').innerHTML =
+      '<textarea id="pItemIn" placeholder="one per line — paste a batch or add them as you find them" style="width:100%;min-height:80px;background:var(--panel);border:1px solid var(--line);border-radius:10px;color:var(--ink);font-size:15px;line-height:1.5;padding:12px;outline:none;font-family:inherit"></textarea>'
+      + '<div class="ctl"><button class="btn primary" onclick="addItem()">add</button></div>'
+      + `<h3>${esc(s.name)} — ${s.items.length}${compared?' · '+compared+' pairs compared':''}</h3>`
+      + (s.items.map(it=>`<div class="pitem"><span style="flex:1">${esc(it.t)}</span><span class="x" onclick="delItem('${it.id}')">×</span></div>`).join('')
+         || '<div class="note">nothing in it yet</div>');
+    return;
+  }
+  const p = nextPair(s);
+  if(s.items.length<2){ $('pairsBody').innerHTML='<div class="note">Two at least, before there is a pair.</div>'; return; }
+  if(!p){ $('pairsBody').innerHTML=`<div class="note">Every pair in ${esc(s.name)} has been through. ${compared} axes and skips. Add more to the set, or start another.</div>`; return; }
+  $('pairsBody').innerHTML =
+      `<div class="pcard"><span class="n">ONE</span>${esc(p.a.t)}</div>`
+    + '<div class="pvs">SAME EXCEPT</div>'
+    + `<div class="pcard"><span class="n">THE OTHER</span>${esc(p.b.t)}</div>`
+    + '<input id="pAxis" placeholder="the one respect they differ in" autocomplete="off" style="width:100%;background:var(--panel);border:1px solid var(--line);border-radius:12px;color:var(--ink);font-size:16px;padding:12px 14px;outline:none;font-family:inherit;margin-top:10px" onkeydown="if(event.key===\'Enter\')saveAxis()">'
+    + '<div class="ctl"><button class="btn primary" onclick="saveAxis()">the axis →</button><button class="btn" onclick="skipPair()">nothing here</button></div>'
+    + `<div class="note">${compared} compared in this set. Strip the nouns if it will survive it — a noun-free axis is map, a noun-bound one is an observation.</div>`;
+  setTimeout(()=>{ const i=$('pAxis'); if(i) i.focus(); },50);
+}
 
 /* ---- visual refs ---- */
 DB.refs=DB.refs||[];
