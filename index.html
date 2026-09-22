@@ -142,6 +142,21 @@
              border:1px solid var(--line); border-radius:99px; padding:4px 9px; }
   .doc .docnav a:active { color:var(--acc); border-color:var(--acc); }
   @media (min-width:620px){ .doc p, .doc li { font-size:15px; } }
+  /* discs */
+  body.p-discs .dock { display:none; }
+  #dStack { margin:6px -4px 2px; }
+  .wrapc { flex-wrap:wrap; overflow:visible; }
+  .dform { border:1px solid var(--line); border-radius:10px; padding:12px; margin:12px 0; }
+  .dform .q2 { font-size:10px; letter-spacing:2px; color:var(--acc); margin-bottom:8px; }
+  .dlab { font-size:9px; letter-spacing:2px; color:var(--dim); margin:6px 0 5px; }
+  .dinp { width:100%; background:var(--panel); border:1px solid var(--line); border-radius:8px; color:var(--ink); font-size:16px; padding:9px 11px; outline:none; font-family:inherit; margin:6px 0 2px; resize:vertical; }
+  .dcard { border-left:3px solid var(--dim); background:rgba(255,255,255,.02); padding:10px 12px; margin:10px 0; border-radius:0 8px 8px 0; }
+  .dcard.hi { background:rgba(212,162,78,.07); }
+  .dcard .tag { font-size:9px; letter-spacing:1.5px; display:block; margin-bottom:4px; }
+  .dlb { font-size:16px; font-weight:600; line-height:1.35; }
+  .dtx { font-size:14.5px; line-height:1.5; white-space:pre-wrap; margin-top:4px; }
+  .dlink { font-size:13.5px; line-height:1.5; padding:7px 0; border-top:1px solid var(--line); }
+  .dpick { padding:8px 2px; border-top:1px solid var(--line); font-size:14px; cursor:pointer; line-height:1.4; }
 </style>
 </head>
 <body>
@@ -170,6 +185,7 @@
     <span class="tab" onclick="pane('pairs',this);renderPairs()">PAIRS</span>
     <span class="tab" onclick="pane('lib',this);renderLib()">LIBRARY</span>
     <span class="tab" onclick="pane('refs',this);renderRefs()">REFS</span>
+    <span class="tab" onclick="pane('discs',this);renderDiscs()">DISCS</span>
     <span class="tab" onclick="pane('data',this);renderData()">DATA</span>
   </div>
 
@@ -457,6 +473,26 @@
     </div>
     <div id="refGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-top:8px"></div>
   </div>
+  <div class="pane" id="pane-discs">
+    <div class="note" style="display:flex;justify-content:space-between;gap:8px;margin-top:10px"><span id="dScope" style="color:var(--vio);letter-spacing:1.5px"></span><span>tap a disc · drag to turn</span></div>
+    <div id="dStack"></div>
+    <div class="dlab">DISCS</div>
+    <div class="chips wrapc" id="dLevels"></div>
+    <div class="dlab">ELEMENTS</div>
+    <div class="chips wrapc" id="dEls"></div>
+    <div id="dBody"></div>
+    <h3>LINKS</h3>
+    <div id="dLinks"></div>
+    <h3>EXPORT AS TEXT (FOR NOTES)</h3>
+    <div class="ctl">
+      <button class="btn" onclick="dExport('el')">this element</button>
+      <button class="btn" onclick="dExport('lv')">this disc</button>
+      <button class="btn" onclick="dExport('pj')">this project</button>
+      <button class="btn" onclick="dExport('ar')">this discipline</button>
+      <button class="btn primary" onclick="dExport('all')">everything</button>
+    </div>
+    <div class="modal" id="dModal" onclick="if(event.target===this)this.classList.remove('on')"><div class="mcard" id="dModalBody"></div></div>
+  </div>
   <div class="pane" id="pane-data">
     <div class="note">Everything on this screen acts on <b style="color:var(--ink)">this app container only</b>. On iPhone a Home-Screen icon has its own storage, separate from Safari — so back up from the same place you type.</div>
 
@@ -673,13 +709,13 @@ function cycleArena(){
   if(DB.arenas.length<2){ addArena(); return; }
   const i=DB.arenas.indexOf(DB.arena);
   DB.arena=DB.arenas[(i+1)%DB.arenas.length];
-  save(); renderCompass(); renderStream(); reorderIfOpen();
+  save(); renderCompass(); renderStream(); reorderIfOpen(); discsIfOpen();
 }
 function addArena(){
   const n=(prompt('New discipline name? (e.g. POETRY)')||'').trim().toUpperCase();
   if(!n||DB.arenas.includes(n)) return;
   DB.arenas.push(n); DB.compW[n]={c:'',log:[]}; DB.arena=n;
-  save(); renderCompass(); renderStream(); reorderIfOpen();
+  save(); renderCompass(); renderStream(); reorderIfOpen(); discsIfOpen();
 }
 /* projects within a discipline */
 function pget(){ DB.proj=DB.proj||{}; DB.proj[DB.arena]=DB.proj[DB.arena]||{list:[],cur:'ALL'}; return DB.proj[DB.arena]; }
@@ -688,13 +724,13 @@ function cycleProject(){
   if(!P.list.length){ addProject(); return; }
   const opts=['ALL'].concat(P.list);
   P.cur=opts[(opts.indexOf(P.cur)+1)%opts.length];
-  save(); renderCompass(); renderStream(); reorderIfOpen();
+  save(); renderCompass(); renderStream(); reorderIfOpen(); discsIfOpen();
 }
 function addProject(){
   const n=(prompt('Project name? (e.g. NEUKÖLLN)')||'').trim();
   if(!n) return; const P=pget();
   if(!P.list.includes(n)) P.list.push(n);
-  P.cur=n; save(); renderCompass(); renderStream(); reorderIfOpen();
+  P.cur=n; save(); renderCompass(); renderStream(); reorderIfOpen(); discsIfOpen();
 }
 
 /* When the discipline/project filters hide entries, say so. Silently showing an
@@ -917,7 +953,7 @@ function solvedSave(){
   DB.entries.push({t,ty:'solved',dom,res,d:today(),ts:Date.now(),sc:'w',ar:DB.arena});
   save(); $('solved').classList.remove('on'); renderLib();
 }
-function pane(n,el){ document.querySelectorAll('.pane').forEach(p=>p.classList.remove('on')); document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on')); $('pane-'+n).classList.add('on'); el.classList.add('on'); SCOPE=(n==='model')?'m':'w'; renderCompass(); }
+function pane(n,el){ document.body.className=document.body.className.replace(/\bp-\w+/g,'').trim(); document.body.classList.add('p-'+n); document.querySelectorAll('.pane').forEach(p=>p.classList.remove('on')); document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on')); $('pane-'+n).classList.add('on'); el.classList.add('on'); SCOPE=(n==='model')?'m':'w'; renderCompass(); }
 /* the document is a reading surface; the stream is the capture one. Kept apart
    because reading and writing about the model are different sittings. */
 var MDMODE = 'doc';
@@ -1048,6 +1084,15 @@ function mergeDB(cur,inc){
   const rs=new Set((cur.refs||[]).map(r=>r.src||r.img||JSON.stringify(r)));
   cur.refs=cur.refs||[];
   (inc.refs||[]).forEach(r=>{ const k=r.src||r.img||JSON.stringify(r); if(!rs.has(k)){ rs.add(k); cur.refs.push(r); added++; } });
+  /* discs: abstractions are identified, last-touched wins; per-discipline
+     discs/elements and the type rungs keep this device's copy when both exist */
+  if(inc.abs){
+    cur.abs=cur.abs||{}; const ca=cur.abs, ia=inc.abs;
+    ca.lv=Object.assign({},ia.lv||{},ca.lv||{}); ca.el=Object.assign({},ia.el||{},ca.el||{});
+    ca.ty=ca.ty||ia.ty; ca.it=ca.it||[];
+    (ia.it||[]).forEach(o=>{ const e=ca.it.find(x=>x.id===o.id);
+      if(!e){ ca.it.push(o); added++; } else if((o.up||0)>(e.up||0)) Object.assign(e,o); });
+  }
   return added;
 }
 
@@ -1198,6 +1243,8 @@ function exportMd(){
     md+='- **'+a+'** — current: '+dim(p.cur)+((p.list||[]).length?' · all: '+p.list.join(', '):'')+'\n';
   });
   if(!Object.keys(P).length) md+='_none_\n';
+
+  if(D.abs&&(D.abs.it||[]).length){ md+='\n## Discs — abstractions\n\n```\n'+dText(D.abs.it)+'```\n'; }
 
   md+='\n## Boxes\n';
   const B=D.boxes||{};
@@ -1658,6 +1705,229 @@ function viewRef(i){ const r=DB.refs[i]; $('refViewImg').src=r.img; $('refViewCa
 function delRef(i){ if(confirm('Remove this ref?')){ DB.refs.splice(i,1); save(); renderRefs(); } }
 
 renderCompass(); renderStream(); renderBoxes(); save();
+/* ---- DISCS: a piece divided into levels of abstraction ----
+   One disc per level, the finished whole on top and the smallest unit (the beat)
+   at the bottom. On a disc you pick an element (dialogue, image…), and under it
+   write abstractions: each has a type (the eight in Types of Abstraction, by what
+   it throws away) and a rung within that type (default attribute → relationship →
+   mechanism). Every abstraction carries a concrete field underneath it and links
+   to any other abstraction, on any disc. Scoped by discipline and project like
+   everything else. Stored in DB.abs so FULL BACKUP and merge carry it. */
+const ABS_TYPES=[
+  ['Generalization','differences between instances','shared features'],
+  ['Idealization','complications (even true ones)','a tractable model'],
+  ['Aggregation','individuals','a summary'],
+  ['Encapsulation','how it works','what it does'],
+  ['Parameterization','which value','the form'],
+  ['Structural','content','relations'],
+  ['Symbolization','the thing itself','a pointer to it'],
+  ['Mechanistic','surface behaviour','a generator for it']];
+const ABS_LV={FILM:['Beat','Scene','Sequence','Act','Film'],POETRY:['Word','Line','Stanza','Poem','Collection'],
+  FASHION:['Detail','Garment','Look','Collection','House']};
+const ABS_EL={FILM:['Dialogue','Action','Image','Sound','Character','Setting','Structure'],
+  POETRY:['Sound','Image','Line break','Voice','Syntax','Form'],
+  FASHION:['Silhouette','Fabric','Colour','Construction','Detail','Styling']};
+const ABS_COL=['#d4a24e','#7fb069','#6e9fc0','#a58fc9','#c0564e','#5fb3a8','#d98bb0','#cfcabd'];
+function A(){
+  DB.abs=DB.abs||{}; const X=DB.abs; X.lv=X.lv||{}; X.el=X.el||{}; X.it=X.it||[];
+  if(!X.ty) X.ty=ABS_TYPES.map(t=>({n:t[0],d:t[1],k:t[2],r:['Attribute','Relationship','Mechanism']}));
+  const a=DB.arena;
+  if(!X.lv[a]) X.lv[a]=(ABS_LV[a]||['Unit','Part','Section','Whole']).slice();
+  if(!X.el[a]) X.el[a]=(ABS_EL[a]||['Form','Content','Structure']).slice();
+  return X;
+}
+let DS={lv:null,el:null,ty:0,r:0,edit:null,open:null,rot:0};
+const dPj=()=>{ const P=pget(); return P.cur==='ALL'?'':P.cur; };
+function dItems(){ const P=pget(); return A().it.filter(i=>i.ar===DB.arena&&(P.cur==='ALL'||i.pj===P.cur)); }
+const dById=id=>A().it.find(i=>i.id===id);
+function dWhere(i){ const X=A(), L=X.lv[i.ar]||[]; return (L[i.lv]||'level '+(i.lv+1))+' · '+i.el; }
+function dTag(i){ const t=A().ty[i.ty]||{n:'?',r:[]}; return t.n+' · rung '+(i.r+1)+' '+(t.r[i.r]||''); }
+function discsIfOpen(){ if($('pane-discs')&&$('pane-discs').classList.contains('on')) renderDiscs(); }
+
+function renderDiscs(){
+  const X=A(), L=X.lv[DB.arena], E=X.el[DB.arena];
+  if(DS.lv===null||DS.lv>=L.length) DS.lv=0;
+  if(DS.el&&E.indexOf(DS.el)<0) DS.el=null;
+  $('dScope').textContent=DB.arena+' · '+(pget().cur||'ALL');
+  renderDiscSvg();
+  $('dLevels').innerHTML=L.map((n,i)=>'<span class="chip core'+(i===DS.lv?' on':'')+'" style="color:var(--acc)" onclick="dPickLv('+i+')">'+esc(n)+'</span>').reverse().join('')
+    +'<span class="chip" onclick="dEditLevels()">✎ discs</span>';
+  const items=dItems().filter(i=>i.lv===DS.lv);
+  $('dEls').innerHTML=E.map(n=>{ const c=items.filter(i=>i.el===n).length;
+      return '<span class="chip core'+(n===DS.el?' on':'')+'" style="color:var(--ink)" onclick="dPickEl(\''+esc(n).replace(/'/g,"\\'")+'\')">'+esc(n)+(c?' <span style="color:var(--dim)">'+c+'</span>':'')+'</span>'; }).join('')
+    +'<span class="chip" onclick="dAddEl()">＋ element</span>'+(DS.el?'<span class="chip" onclick="dEditEl()">✎ '+esc(DS.el)+'</span>':'');
+  const box=$('dBody');
+  if(!DS.el){ box.innerHTML='<div class="note">Pick an element on the <b style="color:var(--acc)">'+esc(L[DS.lv])+'</b> disc to write its abstractions.</div>'; renderDLinks(); return; }
+  const T=X.ty[DS.ty]||X.ty[0]; if(DS.r>=T.r.length) DS.r=0;
+  const ed=DS.edit?dById(DS.edit):null;
+  let h='<div class="dform"><div class="q2">'+(ed?'EDIT ABSTRACTION':'NEW ABSTRACTION')+' · '+esc(L[DS.lv])+' · '+esc(DS.el)+'</div>';
+  h+='<div class="dlab">TYPE</div><div class="chips wrapc">'+X.ty.map((t,i)=>'<span class="chip core'+(i===DS.ty?' on':'')+'" style="color:'+ABS_COL[i%8]+'" onclick="DS.ty='+i+';DS.r=0;renderDiscs()">'+esc(t.n)+'</span>').join('')+'</div>';
+  h+='<div class="note" style="margin:2px 0 8px">throws away <b style="color:var(--ink)">'+esc(T.d)+'</b> · keeps <b style="color:var(--ink)">'+esc(T.k)+'</b></div>';
+  h+='<div class="dlab">RUNG</div><div class="chips wrapc">'+T.r.map((r,i)=>'<span class="chip core'+(i===DS.r?' on':'')+'" style="color:var(--blue)" onclick="DS.r='+i+';renderDiscs()">'+(i+1)+'. '+esc(r)+'</span>').join('')
+     +'<span class="chip" onclick="dEditRungs()">✎ rungs of '+esc(T.n)+'</span></div>';
+  h+='<input id="dLb" class="dinp" placeholder="label" value="'+esc(ed?ed.lb:'')+'">';
+  h+='<textarea id="dTx" class="dinp" rows="4" placeholder="anything">'+esc(ed?ed.tx:'')+'</textarea>';
+  h+='<div class="ctl"><button class="btn primary" onclick="dSave()">'+(ed?'SAVE CHANGES':'ADD')+'</button>'+(ed?'<button class="btn" onclick="DS.edit=null;renderDiscs()">cancel</button>':'')+'</div></div>';
+  const mine=items.filter(i=>i.el===DS.el);
+  h+='<h3>'+esc(DS.el).toUpperCase()+' ON THE '+esc(L[DS.lv]).toUpperCase()+' DISC · '+mine.length+'</h3>';
+  if(!mine.length) h+='<div class="note">Nothing here yet.</div>';
+  mine.forEach(i=>{
+    const col=ABS_COL[i.ty%8];
+    h+='<div class="dcard'+(DS.open===i.id?' hi':'')+'" id="dc-'+i.id+'" style="border-left-color:'+col+'">'
+      +'<span class="tag" style="color:'+col+'">ABSTRACT · '+esc(dTag(i)).toUpperCase()+'</span>'
+      +'<div class="dlb">'+esc(i.lb||'(no label)')+'</div>'
+      +(i.tx?'<div class="dtx">'+esc(i.tx)+'</div>':'')
+      +'<div class="dlab" style="margin-top:10px">CONCRETE</div>'
+      +'<textarea class="dinp dcc" rows="3" placeholder="anything concrete, under this abstraction" oninput="dCC(\''+i.id+'\',this.value)">'+esc(i.cc||'')+'</textarea>'
+      +'<div class="dlab">LINKS</div><div class="chips wrapc">'
+      +(i.ln||[]).map(id=>{ const o=dById(id); return o?'<span class="chip" onclick="dJump(\''+o.id+'\')">↔ '+esc(o.lb||'(no label)')+' <span style="color:var(--dim)">'+esc(dWhere(o))+'</span></span>':''; }).join('')
+      +'<span class="chip" style="color:var(--acc)" onclick="dLinkPick(\''+i.id+'\')">＋ link</span></div>'
+      +'<div class="acts"><button class="mini" onclick="DS.edit=\''+i.id+'\';DS.ty='+i.ty+';DS.r='+i.r+';renderDiscs();window.scrollTo(0,$(\'dBody\').offsetTop-80)">edit</button>'
+      +'<button class="mini" onclick="dExport(\'one\',\''+i.id+'\')">copy as text</button>'
+      +'<button class="mini kill" onclick="dDel(\''+i.id+'\')">delete</button></div></div>';
+  });
+  box.innerHTML=h;
+  renderDLinks();
+}
+function renderDLinks(){
+  const seen=new Set(), rows=[];
+  dItems().forEach(i=>(i.ln||[]).forEach(id=>{ const o=dById(id); if(!o) return; const k=[i.id,id].sort().join('|'); if(seen.has(k)) return; seen.add(k); rows.push([i,o]); }));
+  $('dLinks').innerHTML=rows.length?rows.map(([a,b])=>'<div class="dlink"><span class="ordT" onclick="dJump(\''+a.id+'\')">'+esc(a.lb||'(no label)')+'</span> <span style="color:var(--dim)">'+esc(dWhere(a))+'</span>'
+      +' <b style="color:var(--acc)">↔</b> <span class="ordT" onclick="dJump(\''+b.id+'\')">'+esc(b.lb||'(no label)')+'</span> <span style="color:var(--dim)">'+esc(dWhere(b))+'</span>'
+      +' <span class="x" style="color:var(--dim);cursor:pointer" onclick="dUnlink(\''+a.id+'\',\''+b.id+'\')">✕</span></div>').join('')
+    :'<div class="note">No links yet. Use ＋ link on any abstraction.</div>';
+}
+/* the stack: perspective ellipses, smallest at the bottom. Dots are abstractions:
+   angle = which element, distance from the edge = which rung (mechanism nearest the
+   centre), colour = type. Lines are links. Drag sideways to turn the stack. */
+function renderDiscSvg(){
+  const X=A(), L=X.lv[DB.arena], E=X.el[DB.arena], n=L.length, gap=58, W=700, H=110+(n-1)*gap+60;
+  const geo=L.map((_,i)=>{ const rx=130+i*(170/Math.max(1,n-1)); return {cx:W/2,cy:H-70-i*gap,rx,ry:rx*0.27}; });
+  const pos={}, items=dItems();
+  items.forEach(it=>{
+    const g=geo[Math.min(it.lv,n-1)]; if(!g) return;
+    const ei=Math.max(0,E.indexOf(it.el)), same=items.filter(o=>o.lv===it.lv&&o.el===it.el), k=same.indexOf(it);
+    const R=(X.ty[it.ty]||{r:[1]}).r.length, f=0.88-(R>1?it.r/(R-1):0)*0.62;
+    const a=((ei+0.5)/Math.max(1,E.length))*Math.PI*2+DS.rot+(k-(same.length-1)/2)*0.13;
+    pos[it.id]=[g.cx+Math.cos(a)*g.rx*f,g.cy+Math.sin(a)*g.ry*f];
+  });
+  let s='<svg viewBox="0 0 '+W+' '+H+'" id="dSvg" style="width:100%;display:block;touch-action:pan-y;cursor:grab">';
+  geo.forEach((g,i)=>{ const on=i===DS.lv;
+    s+='<ellipse cx="'+g.cx+'" cy="'+(g.cy+7)+'" rx="'+g.rx+'" ry="'+g.ry+'" fill="#000" opacity=".25"/>'
+      +'<ellipse data-lv="'+i+'" cx="'+g.cx+'" cy="'+g.cy+'" rx="'+g.rx+'" ry="'+g.ry+'" fill="'+(on?'rgba(212,162,78,.16)':'rgba(26,26,33,.82)')+'" stroke="'+(on?'#d4a24e':'#4a4a55')+'" stroke-width="'+(on?2:1)+'" style="cursor:pointer"/>'
+      +'<text x="'+(g.cx+g.rx+12)+'" y="'+(g.cy+4)+'" fill="'+(on?'#d4a24e':'#8a8894')+'" font-size="13" letter-spacing="2" style="text-transform:uppercase">'+esc(L[i]).toUpperCase()+' · '+items.filter(o=>o.lv===i).length+'</text>'; });
+  const seen=new Set();
+  items.forEach(i=>(i.ln||[]).forEach(id=>{ const k=[i.id,id].sort().join('|'); if(seen.has(k)||!pos[i.id]||!pos[id]) return; seen.add(k);
+    const [x1,y1]=pos[i.id],[x2,y2]=pos[id]; s+='<path d="M'+x1+' '+y1+' Q'+((x1+x2)/2+40)+' '+((y1+y2)/2)+' '+x2+' '+y2+'" fill="none" stroke="#e8e6e0" stroke-opacity=".5" stroke-width="1.2" stroke-dasharray="4 3"/>'; }));
+  items.forEach(i=>{ const p=pos[i.id]; if(!p) return; s+='<circle data-id="'+i.id+'" cx="'+p[0]+'" cy="'+p[1]+'" r="'+(DS.open===i.id?8:6)+'" fill="'+ABS_COL[i.ty%8]+'" stroke="#101014" stroke-width="1.5" style="cursor:pointer"><title>'+esc((i.lb||'')+' — '+dWhere(i)+' — '+dTag(i))+'</title></circle>'; });
+  s+='</svg>';
+  $('dStack').innerHTML=s;
+  const svg=$('dSvg'); let sx=null, moved=false;
+  svg.onpointerdown=e=>{ sx=e.clientX; moved=false; };
+  svg.onpointermove=e=>{ if(sx===null) return; const dx=e.clientX-sx; if(Math.abs(dx)>4){ moved=true; DS.rot+=dx*0.01; sx=e.clientX; renderDiscSvg(); } };
+  svg.onpointerup=e=>{ const was=moved; sx=null; if(was) return;
+    const t=e.target; if(t.dataset.id) dJump(t.dataset.id); else if(t.dataset.lv!==undefined) dPickLv(+t.dataset.lv); };
+  svg.onpointerleave=()=>{ sx=null; };
+}
+function dPickLv(i){ DS.lv=i; DS.edit=null; renderDiscs(); }
+function dPickEl(n){ DS.el=DS.el===n?null:n; DS.edit=null; renderDiscs(); }
+function dAddEl(){ const n=(prompt('New element on '+DB.arena+'? (e.g. Blocking)')||'').trim(); const E=A().el[DB.arena]; if(!n||E.includes(n)) return; E.push(n); DS.el=n; save(); renderDiscs(); }
+function dEditEl(){
+  const E=A().el[DB.arena], old=DS.el, n=prompt('Rename "'+old+'" (empty = remove it; its abstractions are kept and come back if you re-add the name):',old);
+  if(n===null) return; const v=n.trim();
+  if(!v){ E.splice(E.indexOf(old),1); DS.el=null; }
+  else if(v!==old){ if(E.includes(v)) return alert('"'+v+'" already exists.'); E[E.indexOf(old)]=v; A().it.forEach(i=>{ if(i.ar===DB.arena&&i.el===old) i.el=v; }); DS.el=v; }
+  save(); renderDiscs();
+}
+function dEditLevels(){
+  const X=A(), cur=X.lv[DB.arena];
+  const n=prompt('Discs for '+DB.arena+', bottom to top, separated by commas.\nAbstractions stay attached by position (1st disc, 2nd disc…).',cur.join(', '));
+  if(n===null) return; const v=n.split(',').map(s=>s.trim()).filter(Boolean); if(!v.length) return;
+  const orphan=X.it.filter(i=>i.ar===DB.arena&&i.lv>=v.length).length;
+  if(orphan&&!confirm(orphan+' abstraction(s) sit on discs you are removing. They will be kept but hidden until the disc comes back. Continue?')) return;
+  X.lv[DB.arena]=v; save(); renderDiscs();
+}
+function dEditRungs(){
+  const T=A().ty[DS.ty], n=prompt('Rungs for '+T.n+', lowest first, separated by commas:',T.r.join(', '));
+  if(n===null) return; const v=n.split(',').map(s=>s.trim()).filter(Boolean); if(!v.length) return;
+  T.r=v; DS.r=0; save(); renderDiscs();
+}
+function dSave(){
+  const lb=$('dLb').value.trim(), tx=$('dTx').value.trim(); if(!lb&&!tx) return $('dLb').focus();
+  if(DS.edit){ const i=dById(DS.edit); if(i){ Object.assign(i,{lb,tx,ty:DS.ty,r:DS.r,up:Date.now()}); } DS.open=DS.edit; DS.edit=null; }
+  else { const i={id:uid(),ar:DB.arena,pj:dPj(),lv:DS.lv,el:DS.el,ty:DS.ty,r:DS.r,lb,tx,cc:'',ln:[],d:today(),up:Date.now()}; A().it.push(i); DS.open=i.id; }
+  save(); renderDiscs();
+}
+let dCCt=null;
+function dCC(id,v){ const i=dById(id); if(!i) return; i.cc=v; i.up=Date.now(); clearTimeout(dCCt); dCCt=setTimeout(save,400); }
+function dDel(id){
+  const i=dById(id); if(!i||!confirm('Delete "'+(i.lb||'this abstraction')+'" and its concrete notes?')) return;
+  const X=A(); X.it=X.it.filter(o=>o.id!==id); X.it.forEach(o=>{ if(o.ln) o.ln=o.ln.filter(x=>x!==id); }); save(); renderDiscs();
+}
+function dJump(id){
+  const i=dById(id); if(!i) return;
+  if(i.ar!==DB.arena){ DB.arena=i.ar; save(); renderCompass(); }
+  DS.lv=i.lv; DS.el=i.el; DS.open=id; DS.edit=null; renderDiscs();
+  const c=$('dc-'+id); if(c) c.scrollIntoView({block:'center',behavior:'smooth'});
+}
+function dUnlink(a,b){ const x=dById(a), y=dById(b); if(x) x.ln=(x.ln||[]).filter(i=>i!==b); if(y) y.ln=(y.ln||[]).filter(i=>i!==a); save(); renderDiscs(); }
+function dLinkPick(id){
+  const src=dById(id), L=A().lv;
+  const rows=A().it.filter(o=>o.id!==id).sort((a,b)=>(a.ar===src.ar?0:1)-(b.ar===src.ar?0:1)||b.lv-a.lv);
+  $('dModalBody').innerHTML='<div class="q">LINK “'+esc(src.lb||'(no label)')+'” TO…</div><input id="dLq" placeholder="search" oninput="dLinkFilter()">'
+    +'<div id="dLlist">'+(rows.length?rows.map(o=>{ const on=(src.ln||[]).includes(o.id);
+      return '<div class="dpick" data-s="'+esc(((o.lb||'')+' '+o.tx+' '+dWhere(o)+' '+o.ar+' '+o.pj).toLowerCase())+'" onclick="dLinkToggle(\''+id+'\',\''+o.id+'\',this)" style="'+(on?'color:var(--acc)':'')+'">'
+        +(on?'✓ ':'')+esc(o.lb||'(no label)')+' <span style="color:var(--dim)">'+esc((o.ar!==src.ar?o.ar+' · ':'')+(o.pj?o.pj+' · ':'')+dWhere(o)+' · '+dTag(o))+'</span></div>'; }).join('')
+      :'<div class="note">Nothing else to link to yet — write another abstraction first.</div>')+'</div>'
+    +'<div class="ctl"><button class="btn primary" onclick="$(\'dModal\').classList.remove(\'on\');renderDiscs()">DONE</button></div>';
+  $('dModal').classList.add('on'); setTimeout(()=>$('dLq')&&$('dLq').focus(),50);
+}
+function dLinkFilter(){ const q=$('dLq').value.toLowerCase(); document.querySelectorAll('#dLlist .dpick').forEach(r=>r.style.display=r.dataset.s.indexOf(q)>=0?'':'none'); }
+function dLinkToggle(a,b,el){
+  const x=dById(a), y=dById(b); x.ln=x.ln||[]; y.ln=y.ln||[];
+  if(x.ln.includes(b)){ x.ln=x.ln.filter(i=>i!==b); y.ln=y.ln.filter(i=>i!==a); el.style.color=''; el.innerHTML=el.innerHTML.replace(/^✓ /,''); }
+  else { x.ln.push(b); y.ln.push(a); el.style.color='var(--acc)'; el.innerHTML='✓ '+el.innerHTML; }
+  x.up=y.up=Date.now(); save();
+}
+/* plain text for Notes: one labelled line per field, so it pastes cleanly and reads
+   back without the app. Scopes: one abstraction, this element, this disc, this
+   project, this discipline, or everything ever written here. */
+function dText(list){
+  const X=A(); let out='', last='';
+  list.slice().sort((a,b)=>a.ar.localeCompare(b.ar)||(a.pj||'').localeCompare(b.pj||'')||b.lv-a.lv||a.el.localeCompare(b.el)).forEach(i=>{
+    const head=i.ar+(i.pj?' · '+i.pj:'')+' — '+dWhere(i);
+    if(head!==last){ out+='=== '+head+' ===\n\n'; last=head; }
+    out+='Abstract: '+(i.lb||'(no label)')+'\n';
+    out+='Type: '+dTag(i)+'\n';
+    if(i.tx) out+='Note: '+i.tx.replace(/\n/g,'\n      ')+'\n';
+    (i.ln||[]).forEach(id=>{ const o=dById(id); if(o) out+='Link: '+(o.lb||'(no label)')+' ('+(o.ar!==i.ar?o.ar+' · ':'')+(o.pj&&o.pj!==i.pj?o.pj+' · ':'')+dWhere(o)+')\n'; });
+    out+='Concrete: '+(i.cc?i.cc.replace(/\n/g,'\n          '):'—')+'\n';
+    out+='Date: '+(i.d||'')+'\n\n';
+  });
+  return out||'(nothing written in this scope yet)\n';
+}
+function dExport(scope,id){
+  const X=A(), all=X.it, P=pget();
+  const pick={one:()=>all.filter(i=>i.id===id), el:()=>dItems().filter(i=>i.lv===DS.lv&&i.el===DS.el), lv:()=>dItems().filter(i=>i.lv===DS.lv),
+    pj:()=>dItems(), ar:()=>all.filter(i=>i.ar===DB.arena), all:()=>all}[scope]();
+  const names={one:'one abstraction',el:DS.el+' on '+(X.lv[DB.arena][DS.lv]||''),lv:(X.lv[DB.arena][DS.lv]||'')+' disc',pj:DB.arena+' · '+(P.cur||'ALL'),ar:DB.arena+' (all projects)',all:'everything'};
+  const txt='ABSTRACTIONS — '+names[scope]+' — exported '+today()+'\n\n'+dText(pick);
+  $('dModalBody').innerHTML='<div class="q">COPY INTO NOTES · '+esc(names[scope]).toUpperCase()+' · '+pick.length+'</div>'
+    +'<textarea id="dOut" class="dinp" rows="16" readonly style="font-family:ui-monospace,Menlo,monospace;font-size:12.5px">'+esc(txt)+'</textarea>'
+    +'<div class="ctl"><button class="btn primary" onclick="dCopy()">COPY</button><button class="btn" onclick="dDownload()">⇩ .txt</button>'
+    +'<button class="btn" onclick="$(\'dModal\').classList.remove(\'on\')">close</button></div><div class="note" id="dCopied"></div>';
+  $('dModal').classList.add('on');
+}
+function dCopy(){
+  const t=$('dOut'); t.select(); t.setSelectionRange(0,t.value.length);
+  const ok=()=>$('dCopied').textContent='Copied. Paste into Notes.';
+  if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(t.value).then(ok,()=>{ document.execCommand('copy'); ok(); });
+  else { document.execCommand('copy'); ok(); }
+}
+function dDownload(){
+  const b=new Blob([$('dOut').value],{type:'text/plain'}), a=document.createElement('a');
+  a.href=URL.createObjectURL(b); a.download='abstractions-'+today()+'.txt'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
 </script>
 </body>
 </html>
