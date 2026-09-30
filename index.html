@@ -159,7 +159,7 @@
   .dpick { padding:8px 2px; border-top:1px solid var(--line); font-size:14px; cursor:pointer; line-height:1.4; }
 </style>
 </head>
-<body>
+<body class="p-discs">
 <div class="wrap">
   <div class="compass">
     <label><span id="cLabel">COMPASS</span> <span id="testing"></span></label>
@@ -170,6 +170,7 @@
       <span id="projChip" onclick="cycleProject()" style="color:var(--blue);cursor:pointer"></span>
       <span onclick="addProject()" style="cursor:pointer;color:var(--blue)">⊕</span>
       <span id="timerChip" onclick="cycleTimer()">⏱ off</span>
+      <span id="syncChip" style="cursor:pointer" onclick="pane('data',[...document.querySelectorAll('.tab')].find(t=>t.textContent==='DATA'));renderData()"></span>
       <span id="boxChip">□ □ □ □ □</span>
       <span style="cursor:pointer" onclick="toggleBlur()">blur <b id="blurState" style="color:var(--acc)">ON</b></span>
       <span style="cursor:pointer" onclick="toggleCore()">view <b id="coreState" style="color:var(--acc)">ALL</b></span>
@@ -179,17 +180,17 @@
   </div>
 
   <div class="tabs">
-    <span class="tab on" onclick="pane('stream',this)">STREAM</span>
+    <span class="tab on" onclick="pane('discs',this);renderDiscs()">DISCS</span>
+    <span class="tab" onclick="pane('stream',this)">STREAM</span>
     <span class="tab" onclick="pane('draft',this);renderDraft()">STRAIGHT</span>
     <span class="tab" onclick="pane('model',this);modelMode(MDMODE)">MODEL</span>
     <span class="tab" onclick="pane('pairs',this);renderPairs()">PAIRS</span>
     <span class="tab" onclick="pane('lib',this);renderLib()">LIBRARY</span>
     <span class="tab" onclick="pane('refs',this);renderRefs()">REFS</span>
-    <span class="tab" onclick="pane('discs',this);renderDiscs()">DISCS</span>
     <span class="tab" onclick="pane('data',this);renderData()">DATA</span>
   </div>
 
-  <div class="pane on" id="pane-stream">
+  <div class="pane" id="pane-stream">
     <div id="bigTimer" style="display:none;text-align:center;font-size:52px;font-variant-numeric:tabular-nums;letter-spacing:2px;padding:14px 0 4px;color:var(--ink)"></div>
     <div class="note" id="hiddenNote" style="display:none;border:1px solid var(--acc);border-radius:8px;padding:9px 11px;margin:0 0 10px"></div>
     <div class="stream" id="stream"></div>
@@ -473,7 +474,7 @@
     </div>
     <div id="refGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-top:8px"></div>
   </div>
-  <div class="pane" id="pane-discs">
+  <div class="pane on" id="pane-discs">
     <div class="note" style="display:flex;justify-content:space-between;gap:8px;margin-top:10px"><span id="dScope" style="color:var(--vio);letter-spacing:1.5px"></span><span>tap a disc · drag to turn</span></div>
     <div id="dStack"></div>
     <div class="dlab">DISCS</div>
@@ -494,6 +495,8 @@
     <div class="modal" id="dModal" onclick="if(event.target===this)this.classList.remove('on')"><div class="mcard" id="dModalBody"></div></div>
   </div>
   <div class="pane" id="pane-data">
+    <h3 style="margin-top:14px">SYNC · PHONE ↔ LAPTOP (GITHUB)</h3>
+    <div id="syncBox" style="border:1px solid var(--line);border-radius:10px;padding:4px 12px 8px;margin-bottom:6px"></div>
     <div class="note">Everything on this screen acts on <b style="color:var(--ink)">this app container only</b>. On iPhone a Home-Screen icon has its own storage, separate from Safari — so back up from the same place you type.</div>
 
     <div id="dataHealth" style="border:1px solid var(--line);border-radius:10px;padding:12px;margin:12px 0;font-size:13px;line-height:1.6"></div>
@@ -580,7 +583,7 @@
     <span class="chip core c-wall" data-p="&gt;">&gt; COMPASS</span>
     <span class="chip core c-cand on" data-p="">FOG</span>
     <span class="chip core c-link" data-p="=">= LINK</span>
-    <span class="chip core" style="color:var(--good)" onclick="pane('draft',document.querySelectorAll('.tab')[1]);renderDraft();event.stopPropagation()">✍ STRAIGHT</span>
+    <span class="chip core" style="color:var(--good)" onclick="pane('draft',[...document.querySelectorAll('.tab')].find(t=>t.textContent==='STRAIGHT'));renderDraft();event.stopPropagation()">✍ STRAIGHT</span>
     <span class="chipDivider"></span>
     <span class="chip c-flinch" data-p="!">! flinch</span>
     <span class="chip c-intake" data-p="&lt;">&lt; intake</span>
@@ -649,6 +652,7 @@ function save(){
   /* setItem can succeed and still store nothing in some locked-down modes */
   if(localStorage.getItem(K)!==s){ saveWarn('the write did not stick (storage is read-only here).'); return false; }
   if(!SAVE_OK){ SAVE_OK=true; const b=document.getElementById('saveWarn'); if(b) b.remove(); }
+  if(window.SY&&!SY.applying) sySchedule();   /* sync: push after typing pauses */
   return true;
 }
 const today=()=>new Date().toISOString().slice(0,10);
@@ -675,7 +679,7 @@ $('inp').addEventListener('keydown',e=>{
   const [ty,t]=parse(v); if(!t) return;
   addEntry(ty,t,dip); $('inp').value='';
 });
-document.querySelectorAll('.chip').forEach(ch=>ch.onclick=()=>{
+document.querySelectorAll('.chip[data-p]').forEach(ch=>ch.onclick=()=>{
   document.querySelectorAll('.chip').forEach(c=>c.classList.remove('on'));
   ch.classList.add('on'); chipPrefix=ch.dataset.p.replace('&gt;','>').replace('&lt;','<');
   $('inp').focus();
@@ -793,14 +797,14 @@ function review(){
     </div>`).join('')+`<div class="ctl"><button class="btn primary" onclick="doneReview()">Done — bank it all</button></div>`;
 }
 function mk(i,s,btn){
-  const e=DB.entries[i]; e.state=(e.state===s)?'':s;
+  const e=DB.entries[i]; e.state=(e.state===s)?'':s; e.eu=Date.now();
   const row=$('rv'+i); row.className='en cand '+(e.state||'');
   row.querySelectorAll('.mini').forEach(b=>b.classList.remove('on'));
   if(e.state) btn.classList.add('on');
   row.querySelector('.fline').style.display=(e.state==='killed')?'block':'none';
 }
 function flOf(i,v){ if(v.trim()) addEntry('fail',v.trim()); }
-function doneReview(){ DB.entries.forEach(e=>{ if(e.ty==='cand') e.rev=1; }); save(); renderStream(); }
+function doneReview(){ DB.entries.forEach(e=>{ if(e.ty==='cand'&&!e.rev){ e.rev=1; e.eu=Date.now(); } }); save(); renderStream(); }
 
 /* hypotheses */
 function deploy(i){ testingIdx=i; $('testing').style.display='inline'; $('testing').textContent=' · ⚗ testing: '+DB.entries[i].t; }
@@ -808,7 +812,7 @@ function closeBlock(){
   if(testingIdx!=null){
     const h=DB.entries[testingIdx];
     const held=confirm('Hypothesis under test:\n"'+h.t+'"\n\nOK = it held · Cancel = it broke');
-    h.st=held?'held':'failed';
+    h.st=held?'held':'failed'; h.eu=Date.now();
     if(!held){ const w=prompt('Broke when… (banks as failure line)'); if(w&&w.trim()) addEntry('fail',w.trim()); }
     testingIdx=null; $('testing').style.display='none';
   }
@@ -1028,9 +1032,12 @@ function backupText(){
 /* merge two DB objects; b wins on scalars only where a is empty */
 function mergeDB(cur,inc){
   const key=e=>[e.ty,e.t,e.d||'',e.tm||'',e.sc||'',e.dom||''].join('|');
-  const seen=new Set((cur.entries||[]).map(key));
+  const byK=new Map((cur.entries||[]).map(e=>[key(e),e]));
   let added=0;
-  (inc.entries||[]).forEach(e=>{ if(!seen.has(key(e))){ seen.add(key(e)); cur.entries.push(e); added++; } });
+  /* same entry on both sides: the later review/test mark (eu) wins */
+  (inc.entries||[]).forEach(e=>{ const k=key(e), m=byK.get(k);
+    if(!m){ byK.set(k,e); cur.entries.push(e); added++; }
+    else if((e.eu||0)>(m.eu||0)) ['state','rev','st','eu'].forEach(f=>{ if(e[f]===undefined) delete m[f]; else m[f]=e[f]; }); });
   cur.entries.sort((x,y)=>(x.ts||0)-(y.ts||0));
 
   cur.compass=cur.compass||inc.compass||'';
@@ -1062,6 +1069,8 @@ function mergeDB(cur,inc){
 
   cur.boxes=Object.assign({},inc.boxes||{},cur.boxes||{});
   cur.proj=Object.assign({},inc.proj||{},cur.proj||{});
+  Object.keys(inc.proj||{}).forEach(a=>{ const c=cur.proj[a], i=inc.proj[a]; if(!c||!i||c===i) return;
+    c.list=c.list||[]; (i.list||[]).forEach(n=>{ if(c.list.indexOf(n)<0) c.list.push(n); }); });
 
   /* Drafts hold the only copy of the actual prose, so a merge must never
      silently drop scene text. Identical or contained text collapses; genuinely
@@ -1090,11 +1099,24 @@ function mergeDB(cur,inc){
     cur.abs=cur.abs||{}; const ca=cur.abs, ia=inc.abs;
     ca.lv=Object.assign({},ia.lv||{},ca.lv||{}); ca.el=Object.assign({},ia.el||{},ca.el||{});
     ca.ty=ca.ty||ia.ty; ca.it=ca.it||[];
+    Object.keys(ia.el||{}).forEach(a=>{ const c=ca.el[a]; if(c&&c!==ia.el[a]) ia.el[a].forEach(n=>{ if(c.indexOf(n)<0) c.push(n); }); });
     (ia.it||[]).forEach(o=>{ const e=ca.it.find(x=>x.id===o.id);
       if(!e){ ca.it.push(o); added++; } else if((o.up||0)>(e.up||0)) Object.assign(e,o); });
   }
+  /* deletions: a tombstone (id → time) travels with the data so a deleted item
+     can't come back from the other device; a negative time means re-added */
+  cur.gone=cur.gone||{};
+  Object.keys(inc.gone||{}).forEach(k=>{ if(Math.abs(inc.gone[k])>Math.abs(cur.gone[k]||0)) cur.gone[k]=inc.gone[k]; });
+  const G=k=>(cur.gone[k]||0)>0;
+  cur.refs=(cur.refs||[]).filter(r=>!G('r:'+refKey(r)));
+  if(cur.abs){
+    cur.abs.it=(cur.abs.it||[]).filter(i=>!G('a:'+i.id));
+    cur.abs.it.forEach(i=>{ if(i.ln) i.ln=i.ln.filter(x=>!G('a:'+x)); });
+    Object.keys(cur.abs.el||{}).forEach(a=>{ cur.abs.el[a]=cur.abs.el[a].filter(n=>!G('e:'+a+'|'+n)); });
+  }
   return added;
 }
+function refKey(r){ return r.src||(r.img?r.img.length+':'+r.img.slice(-48):'')||((r.t||'')+'|'+(r.d||'')); }
 
 function restore(mode){
   const f=$('dataFile').files[0], txt=$('dataBox').value;
@@ -1151,6 +1173,7 @@ function storageProbe(){
   }
 }
 function renderData(){
+  renderSync();
   const standalone=(navigator.standalone===true)||(matchMedia&&matchMedia('(display-mode: standalone)').matches);
   const probe=storageProbe();
   const keys=loopKeys();
@@ -1702,7 +1725,7 @@ function renderRefs(){
     </div>`).reverse().join('')||'<div class="note">Nothing yet. Paste an image or use ＋.</div>';
 }
 function viewRef(i){ const r=DB.refs[i]; $('refViewImg').src=r.img; $('refViewCap').textContent=[r.t,r.ar,r.pj,r.d].filter(Boolean).join(' · '); $('refView').style.display='flex'; }
-function delRef(i){ if(confirm('Remove this ref?')){ DB.refs.splice(i,1); save(); renderRefs(); } }
+function delRef(i){ if(confirm('Remove this ref?')){ DB.gone=DB.gone||{}; DB.gone['r:'+refKey(DB.refs[i])]=Date.now(); DB.refs.splice(i,1); save(); renderRefs(); } }
 
 renderCompass(); renderStream(); renderBoxes(); save();
 /* ---- DISCS: a piece divided into levels of abstraction ----
@@ -1831,12 +1854,13 @@ function renderDiscSvg(){
 }
 function dPickLv(i){ DS.lv=i; DS.edit=null; renderDiscs(); }
 function dPickEl(n){ DS.el=DS.el===n?null:n; DS.edit=null; renderDiscs(); }
-function dAddEl(){ const n=(prompt('New element on '+DB.arena+'? (e.g. Blocking)')||'').trim(); const E=A().el[DB.arena]; if(!n||E.includes(n)) return; E.push(n); DS.el=n; save(); renderDiscs(); }
+function dAddEl(){ const n=(prompt('New element on '+DB.arena+'? (e.g. Blocking)')||'').trim(); const E=A().el[DB.arena]; if(!n||E.includes(n)) return; E.push(n); if(DB.gone&&DB.gone['e:'+DB.arena+'|'+n]) DB.gone['e:'+DB.arena+'|'+n]=-Date.now(); DS.el=n; save(); renderDiscs(); }
 function dEditEl(){
   const E=A().el[DB.arena], old=DS.el, n=prompt('Rename "'+old+'" (empty = remove it; its abstractions are kept and come back if you re-add the name):',old);
   if(n===null) return; const v=n.trim();
-  if(!v){ E.splice(E.indexOf(old),1); DS.el=null; }
-  else if(v!==old){ if(E.includes(v)) return alert('"'+v+'" already exists.'); E[E.indexOf(old)]=v; A().it.forEach(i=>{ if(i.ar===DB.arena&&i.el===old) i.el=v; }); DS.el=v; }
+  DB.gone=DB.gone||{};
+  if(!v){ E.splice(E.indexOf(old),1); DS.el=null; DB.gone['e:'+DB.arena+'|'+old]=Date.now(); }
+  else if(v!==old){ if(E.includes(v)) return alert('"'+v+'" already exists.'); E[E.indexOf(old)]=v; DB.gone['e:'+DB.arena+'|'+old]=Date.now(); if(DB.gone['e:'+DB.arena+'|'+v]) DB.gone['e:'+DB.arena+'|'+v]=-Date.now(); A().it.forEach(i=>{ if(i.ar===DB.arena&&i.el===old) i.el=v; }); DS.el=v; }
   save(); renderDiscs();
 }
 function dEditLevels(){
@@ -1862,6 +1886,7 @@ let dCCt=null;
 function dCC(id,v){ const i=dById(id); if(!i) return; i.cc=v; i.up=Date.now(); clearTimeout(dCCt); dCCt=setTimeout(save,400); }
 function dDel(id){
   const i=dById(id); if(!i||!confirm('Delete "'+(i.lb||'this abstraction')+'" and its concrete notes?')) return;
+  DB.gone=DB.gone||{}; DB.gone['a:'+id]=Date.now();
   const X=A(); X.it=X.it.filter(o=>o.id!==id); X.it.forEach(o=>{ if(o.ln) o.ln=o.ln.filter(x=>x!==id); }); save(); renderDiscs();
 }
 function dJump(id){
@@ -1928,6 +1953,160 @@ function dDownload(){
   const b=new Blob([$('dOut').value],{type:'text/plain'}), a=document.createElement('a');
   a.href=URL.createObjectURL(b); a.download='abstractions-'+today()+'.txt'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
 }
+/* what travels: everything except this device's own place in the app (which
+   discipline/project is open, the save stamp) and the refs images */
+function syPayload(){
+  const o=JSON.parse(JSON.stringify(DB)); delete o._sv; delete o.arena; delete o.refs; delete o.ordCur;
+  Object.keys(o.proj||{}).forEach(a=>delete o.proj[a].cur); return o;
+}
+/* mergeDB plus the three things live sync needs that a one-off restore doesn't:
+   a draft edited on one side replaces the other (unless both changed since the
+   last sync — then mergeDB keeps both), a changed compass line carries over, and
+   incoming objects are copies so the two sides never share references. */
+function syncMerge(cur,inc,force){
+  inc=JSON.parse(JSON.stringify(inc));
+  const cd={}; (cur.drafts||[]).forEach(d=>{ if(d.id) cd[d.id]=d; });
+  inc.drafts=(inc.drafts||[]).filter(d=>{ const e=d.id&&cd[d.id]; if(!e) return true;
+    if((d.txt||'')===(e.txt||'')&&d.title===e.title) return false;
+    if((d.up||0)<=(e.up||0)) return false;
+    if(force||(e.up||0)<=SY.okAt){ Object.assign(e,d); return false; }
+    return true; });
+  const newer=(c,cl,i,il)=>!!i&&i!==c&&(il||[]).some(w=>w.t===c)&&!(cl||[]).some(w=>w.t===i);
+  Object.keys(inc.compW||{}).forEach(a=>{ const C=(cur.compW||{})[a], I=inc.compW[a]; if(C&&I&&newer(C.c,C.log,I.c,I.log)) C.c=I.c; });
+  if(newer(cur.modelCompass,cur.compassLogM,inc.modelCompass,inc.compassLogM)) cur.modelCompass=inc.modelCompass;
+  return mergeDB(cur,inc);
+}
+
+/* re-render what's open, but never under the cursor: a textarea being typed in
+   waits until focus leaves it */
+function syRefresh(){
+  const a=document.activeElement;
+  if(a&&a.id!=='inp'&&(a.tagName==='TEXTAREA'||a.tagName==='INPUT'||a.isContentEditable)){ SY.dirty=true; return; }
+  SY.dirty=false; renderCompass();
+  const p=(document.querySelector('.pane.on')||{}).id;
+  const f={'pane-stream':renderStream,'pane-discs':renderDiscs,'pane-draft':renderDraft,'pane-lib':renderLib,'pane-refs':renderRefs,'pane-pairs':renderPairs,'pane-data':renderData}[p];
+  if(f) f();
+}
+document.addEventListener('focusout',()=>setTimeout(()=>{ if(SY.dirty) syRefresh(); },300));
+/* ---- SYNC THROUGH GITHUB: phone ↔ laptop, automatic ----
+   Everything travels as one file, data.json, in a private repo of yours. Each
+   device pulls it on open, on return to the app and every 20s while visible, and
+   pushes a few seconds after typing stops (4s idle, at most 60s). GitHub refuses
+   a push made against an out-of-date copy (the sha check), so a device can never
+   overwrite the other blind: it pulls, merges with the same mergeDB the backup
+   restore uses, and pushes again. Every push is a commit, so the repo's history
+   is a full version log. Refs images stay on the device they were added on. */
+var SK='sync_loop';   /* deliberately not 'loop…': FULL BACKUP copies every loop* key and must never carry the token */
+var SY={repo:'',tok:'',sha:'',okAt:0,etag:'',last:'',busy:false,again:false,t:null,first:0,status:'off',err:'',applying:false,dirty:false};
+try{ const o=JSON.parse(localStorage.getItem(SK)||'{}'); ['repo','tok','sha','okAt','etag','last'].forEach(k=>{ if(o[k]) SY[k]=o[k]; }); }catch(e){}
+function sySave(){ try{ localStorage.setItem(SK,JSON.stringify({repo:SY.repo,tok:SY.tok,sha:SY.sha,okAt:SY.okAt,etag:SY.etag,last:SY.last})); }catch(e){} }
+const syOnNow=()=>!!(SY.repo&&SY.tok);
+function syB64(str){ const u=new TextEncoder().encode(str); let s=''; for(let i=0;i<u.length;i+=32768) s+=String.fromCharCode.apply(null,u.subarray(i,i+32768)); return btoa(s); }
+function syUnb64(b){ const bin=atob(b.replace(/\s/g,'')), u=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i); return new TextDecoder().decode(u); }
+function syApi(method,body,extra){
+  return fetch('https://api.github.com/repos/'+SY.repo+'/contents/data.json'+(method==='GET'?'?t='+Date.now():''),{method,cache:'no-store',
+    headers:Object.assign({'Authorization':'Bearer '+SY.tok,'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'},extra||{}),
+    body:body?JSON.stringify(body):undefined});
+}
+function syWhy(r){ return r.status===401?'token rejected — paste a new one':r.status===403?'token lacks write access to '+SY.repo:r.status===404?'repo '+SY.repo+' not found (or token can\'t see it)':'GitHub said '+r.status; }
+/* one operation at a time; anything asked for meanwhile runs once after */
+async function syRun(){
+  if(!syOnNow()) return;
+  if(SY.busy){ SY.again=true; return; }
+  SY.busy=true;
+  try{ await syPull(); await syPush(); SY.okAt=Date.now(); sySave(); syStatus('live'); }
+  catch(e){ syStatus('error',e.message||String(e)); }
+  SY.busy=false;
+  if(SY.again){ SY.again=false; syRun(); }
+}
+async function syPull(){
+  const r=await syApi('GET');
+  if(r.status===404){                                     /* no data.json yet is fine — the push creates it; no repo is not */
+    const rr=await fetch('https://api.github.com/repos/'+SY.repo,{cache:'no-store',headers:{'Authorization':'Bearer '+SY.tok,'Accept':'application/vnd.github+json'}});
+    if(!rr.ok) throw new Error(syWhy(rr));
+    SY.sha=''; return;
+  }
+  if(!r.ok) throw new Error(syWhy(r));
+  const j=await r.json();
+  if(j.sha===SY.sha) return;                              /* nothing new since we last saw it */
+  let txt=j.content?syUnb64(j.content):'';
+  if(!txt&&j.download_url===null) throw new Error('data.json unreadable');
+  if(!txt){ const raw=await syApi('GET',null,{'Accept':'application/vnd.github.raw+json'}); if(!raw.ok) throw new Error(syWhy(raw)); txt=await raw.text(); }
+  const inc=JSON.parse(txt);
+  syncMerge(DB,inc,false);
+  Object.keys(DB.proj||{}).forEach(a=>{ if(!DB.proj[a].cur) DB.proj[a].cur='ALL'; });
+  SY.applying=true; save(); SY.applying=false;
+  /* push back only if this device holds something the repo copy lacks; merging
+     the repo copy with itself first fills in defaults, so the comparison sees
+     content, not missing empty fields. Without this the two devices would take
+     turns re-committing the same data on every poll. */
+  const remote=JSON.parse(txt); syncMerge(remote,JSON.parse(txt),true);
+  const before=JSON.stringify(remote); syncMerge(remote,syPayload(),true);
+  SY.sha=j.sha; SY.last=JSON.stringify(remote)===before?JSON.stringify(syPayload()):''; sySave();
+  syRefresh();
+}
+async function syPush(){
+  const txt=JSON.stringify(syPayload());
+  if(txt===SY.last) return;                               /* the repo already holds exactly this */
+  const r=await syApi('PUT',{message:'Loop · '+(/iPhone|iPad|Android/.test(navigator.userAgent)?'phone':'laptop')+' · '+new Date().toISOString().slice(0,16).replace('T',' '),
+    content:syB64(txt),sha:SY.sha||undefined});
+  if(r.status===409||r.status===422){                     /* someone pushed first: fold theirs in, try once more */
+    SY.sha='__stale__'; await syPull(); return syPush();
+  }
+  if(!r.ok) throw new Error(syWhy(r));
+  const j=await r.json(); SY.sha=j.content.sha; SY.last=txt; sySave();
+}
+function syStatus(s,err){ SY.status=s; SY.err=err||''; syPaint(); }
+function syPaint(){
+  const c=$('syncChip');
+  if(c){ const m={off:['☁ sync off','var(--dim)'],wait:['… syncing','var(--blue)'],live:['● synced','var(--good)'],error:['! sync: '+SY.err,'var(--bad)']}[SY.status];
+    c.textContent=m[0]; c.style.color=m[1]; }
+  if($('pane-data')&&$('pane-data').classList.contains('on')) renderSync();
+}
+function sySchedule(){
+  if(!syOnNow()||SY.applying) return;
+  clearTimeout(SY.t); if(!SY.first) SY.first=Date.now();
+  SY.t=setTimeout(()=>{ SY.first=0; syRun(); },Math.max(0,Math.min(4000,60000-(Date.now()-SY.first))));
+  if(SY.status!=='error') syStatus('wait');
+}
+setInterval(()=>{ if(syOnNow()&&document.visibilityState==='visible') syRun(); },20000);
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') syRun(); else if(SY.t){ clearTimeout(SY.t); SY.first=0; syRun(); } });
+window.addEventListener('online',()=>syRun());
+function syConnect(){
+  let tok=($('syTok').value||'').trim(), repo=($('syRepo').value||'').trim().replace(/^https:\/\/github\.com\//,'').replace(/\/$/,'');
+  const code=tok.match(/^([\w.-]+\/[\w.-]+)\|(.+)$/); if(code){ repo=code[1]; tok=code[2]; }
+  if(!/^[\w.-]+\/[\w.-]+$/.test(repo)) return alert('Repo should look like sattimoh12/loop-data');
+  if(tok.length<20) return alert('Paste the whole token (it starts with github_pat_).');
+  SY.repo=repo; SY.tok=tok; SY.sha=''; SY.last=''; SY.okAt=0; sySave(); syStatus('wait'); renderSync(); syRun();
+}
+function syOff(){
+  if(!confirm('Stop syncing on this device?\n\nEverything stays here, and the copy on GitHub stays too — this device just stops updating.')) return;
+  SY.tok=''; SY.sha=''; SY.last=''; sySave(); syStatus('off'); renderSync();
+}
+async function syCopyCode(){
+  const c=SY.repo+'|'+SY.tok;
+  try{ await navigator.clipboard.writeText(c); alert('Setup code copied. On the other device: DATA → paste it in the token box → CONNECT.'); }
+  catch(e){ prompt('Copy this setup code:',c); }
+}
+function renderSync(){
+  const b=$('syncBox'); if(!b) return;
+  if(!syOnNow()){
+    b.innerHTML='<div class="note">Off. Connect with a private GitHub repo and a token that can only touch that repo. Do this on <b style="color:var(--ink)">each</b> device — on iPhone inside the Home-Screen app, not Safari, since they keep separate storage.</div>'
+      +'<input id="syRepo" class="dinp" value="'+esc(SY.repo||'sattimoh12/loop-data')+'" placeholder="sattimoh12/loop-data" autocomplete="off" autocapitalize="off">'
+      +'<input id="syTok" class="dinp" type="password" placeholder="token (github_pat_…) or setup code from your other device" autocomplete="off" autocapitalize="off">'
+      +'<div class="ctl"><button class="btn primary" onclick="syConnect()">CONNECT</button></div>';
+    return;
+  }
+  const st={off:'off',wait:'syncing…',live:'in step',error:'error — '+SY.err}[SY.status];
+  b.innerHTML='<div class="note">Syncing with <b style="color:var(--ink)">'+esc(SY.repo)+'</b> · <b style="color:'+(SY.status==='live'?'var(--good)':SY.status==='error'?'var(--bad)':'var(--blue)')+'">'+esc(st)+'</b>'
+      +(SY.okAt?' · last in step '+new Date(SY.okAt).toLocaleString():'')+'</div>'
+    +'<div class="ctl"><button class="btn primary" onclick="syRun()">SYNC NOW</button><button class="btn" onclick="syCopyCode()">copy setup code for the other device</button><button class="btn" onclick="syOff()">stop syncing here</button></div>'
+    +'<div class="note">The setup code contains your token — paste it only into your own devices. Refs images stay on the device they were added on.</div>';
+}
+if(syOnNow()) syRun(); else syPaint();
+
+/* DISCS is the opening screen */
+renderDiscs();
 </script>
 </body>
 </html>
