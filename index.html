@@ -204,15 +204,19 @@
     </div>
     <div id="dWrite">
       <div class="note">The straight attempt — the scene itself, rules on, typed here. Autosaves as you go. When a wall appears, don't solve it: bank it in the box below with <b style="color:var(--acc)">&gt;</b> and keep writing. Scene text stays on your devices and, with SYNC on, your private loop-data repo — the .md digest carries titles and word counts only.</div>
-      <div class="ctl">
-        <select id="draftSel" onchange="pickDraft(this.value)" style="background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px;max-width:60%"></select>
+      <div id="pinBox"></div>
+      <div class="ctl" style="align-items:flex-start;flex-wrap:nowrap">
+        <select id="draftSel" onchange="pickDraft(this.value)" style="background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px;flex:0 1 42%;min-width:0;height:40px"></select>
+        <button class="btn" id="pinBtn" onclick="pinToggle()" title="pin this scene (up to 5)" style="height:40px;flex:none;color:var(--acc)">☆</button>
+        <textarea id="focusTxt" rows="1" placeholder="what this scene is for…" oninput="focusSave()" style="flex:1 1 auto;min-width:0;min-height:40px;max-height:160px;background:var(--panel);border:1px solid var(--line);border-radius:8px;color:var(--good);font-size:14px;line-height:1.4;padding:9px 11px;outline:none;font-family:inherit;resize:none"></textarea>
+      </div>
+      <div class="ctl" style="margin-top:0">
         <button class="btn" onclick="newDraft()">＋ new scene</button>
         <button class="btn" onclick="impOpen()">⇪ import scenes</button>
         <button class="btn" onclick="expOpen()">⇩ export scenes</button>
         <span class="note" id="draftMeta"></span>
       </div>
       <textarea id="draftTxt" oninput="autosaveDraft()" placeholder="INT. — the straight version…" style="width:100%;min-height:55vh;background:var(--panel);border:1px solid var(--line);border-radius:10px;color:var(--ink);font-size:15px;line-height:1.6;padding:16px;outline:none;font-family:'Courier New',monospace"></textarea>
-      <div id="focusBox"></div>
     </div>
     <div class="modal" id="impModal" onclick="if(event.target===this)this.classList.remove('on')"><div class="mcard">
       <div class="q">IMPORT SCENES INTO <span id="impWhere"></span></div>
@@ -1370,7 +1374,7 @@ function commitDraft(){
   if(curDraft===null||!DB.drafts[curDraft]) return;
   const D=DB.drafts[curDraft], v=$('draftTxt').value;
   if(D.txt===v) return;
-  D.txt=v; D.up=Date.now();
+  D.txt=v; D.up=Date.now(); D.wk=Date.now();
   const ok=save();
   $('draftMeta').textContent=`${(v.trim().match(/\S+/g)||[]).length} words · ${D.pj||D.ar} · ${ok?'saved':'NOT SAVED'}`;
 }
@@ -1387,6 +1391,7 @@ function flushPending(){
   clearTimeout(draftTimer);
   commitCompass();   /* not via blur() — focus can be lost before we get here */
   commitDraft();
+  if(focusT){ clearTimeout(focusT); focusT=null; save(); }
 }
 
 /* ================= scene order =================
@@ -2254,7 +2259,7 @@ function impPreview(){
   if(!$('impTxt').value.trim()) h='<div class="note">Paste from your screenwriting app above, or choose a file.</div>';
   else {
     if(IMP.pre){
-      const lab={focus:chip('var(--vio)','→ note in focus of “'+esc((IMP.open||{}).title||'')+'”'),append:chip('var(--blue)','→ end of “'+esc((IMP.open||{}).title||'')+'” text'),note:chip('var(--vio)','＋ notes scene'),skip:chip('var(--dim)','– leave out')}[IMP.preMode];
+      const lab={focus:chip('var(--vio)','→ focus of “'+esc((IMP.open||{}).title||'')+'”'),append:chip('var(--blue)','→ end of “'+esc((IMP.open||{}).title||'')+'” text'),note:chip('var(--vio)','＋ notes scene'),skip:chip('var(--dim)','– leave out')}[IMP.preMode];
       h+='<div class="dpick" onclick="impPreCycle()" style="display:flex;gap:8px;align-items:center;justify-content:space-between"><span><span style="color:var(--dim)">above the first heading</span> · '+wc(IMP.pre)+' words</span>'+lab+'</div>';
     }
     h+=IMP.plan.map((p,i)=>{
@@ -2286,7 +2291,7 @@ function impGo(){
   };
   const add=(title,txt)=>{ const id=uid()+Math.random().toString(36).slice(2,5); DB.drafts.push({id,title,txt,ar:DB.arena,pj,d:today(),up:now}); place(id,title); last=id; if(!focus) focus=id; return id; };
   if(IMP.pre&&IMP.preMode==='focus'&&IMP.open){
-    IMP.open.fx=IMP.open.fx||[]; IMP.open.fx.push({ty:'note',t:IMP.pre,ts:now}); IMP.open.up=now; last=IMP.open.id; focus=IMP.open.id; c.pre='kept as a NOTE in the focus of “'+IMP.open.title+'”';
+    IMP.open.focus=((IMP.open.focus||'').replace(/\s+$/,'')+'\n'+IMP.pre).replace(/^\n/,''); IMP.open.up=now; last=IMP.open.id; focus=IMP.open.id; c.pre='added to the focus of “'+IMP.open.title+'”';
   } else if(IMP.pre&&IMP.preMode==='append'&&IMP.open){
     IMP.open.txt=(IMP.open.txt||'').replace(/\s+$/,'')+'\n\n'+IMP.pre; IMP.open.up=now; last=IMP.open.id; focus=IMP.open.id; c.pre='added to the end of “'+IMP.open.title+'”';
   } else if(IMP.pre&&IMP.preMode==='note'){
@@ -2304,30 +2309,49 @@ function impGo(){
   alert(['Imported into STRAIGHT:',c.nw?c.nw+' new scene'+(c.nw>1?'s':''):'',c.rp?c.rp+' updated':'',c.pre?'the text above the first heading was '+c.pre:''].filter(Boolean).join('\n'));
 }
 
-/* ---- per-scene FOCUS: what the scene is for, kept apart from the scene text so
-   re-importing a revised scene from the writing app never touches it ---- */
-const FX=[['compass','COMPASS','var(--acc)'],['fog','FOG','var(--ink)'],['cand','CANDIDATE LINE','var(--good)'],['link','LINK','var(--blue)'],['note','NOTE','var(--vio)']];
-const fxOf=k=>FX.find(f=>f[0]===k)||FX[4];
-let FXTY='compass';
+/* ---- per-scene focus + pinned scenes ----
+   The focus is one plain box beside the scene picker: what the scene is for (a
+   candidate line, the fog it's chasing). It's kept apart from the scene text, so
+   re-importing a revised scene never touches it. Up to five scenes can be pinned;
+   the pinned list sorts by last worked on, so "where did I leave off" is the top row. */
+function fxMigrate(D){   /* the first version kept typed lines in D.fx — fold them into the box */
+  if(D&&D.fx&&D.fx.length){ D.focus=[D.focus||''].concat(D.fx.map(x=>x.t)).filter(Boolean).join('\n'); delete D.fx; D.up=Date.now(); save(); }
+}
+let focusT=null;
+function fitFocus(){ const f=$('focusTxt'); if(!f) return; f.style.height='auto'; f.style.height=Math.min(f.scrollHeight+2,160)+'px'; }
 function renderFocus(){
-  const b=$('focusBox'); if(!b) return;
+  const f=$('focusTxt'); if(!f) return;
   const D=curDraft!==null?DB.drafts[curDraft]:null;
-  if(!D){ b.innerHTML=''; return; }
-  const list=D.fx||[];
-  b.innerHTML='<h3>FOCUS OF THIS SCENE</h3>'
-    +'<div class="chips wrapc">'+FX.map(f=>'<span class="chip core'+(f[0]===FXTY?' on':'')+'" style="color:'+f[2]+'" onclick="FXTY=\''+f[0]+'\';renderFocus();$(\'fxIn\').focus()">'+f[1]+'</span>').join('')+'</div>'
-    +'<input id="fxIn" class="dinp" placeholder="'+fxOf(FXTY)[1].toLowerCase()+' for this scene — Enter adds it" autocomplete="off" onkeydown="if(event.key===\'Enter\'){event.preventDefault();fxAdd();}">'
-    +(list.length?list.map((x,i)=>{ const f=fxOf(x.ty);
-        return '<div class="en" style="border-color:'+f[2]+';display:flex;gap:8px;justify-content:space-between"><span style="white-space:pre-wrap"><span class="tag" style="color:'+f[2]+'">'+f[1]+'</span>'+esc(x.t)+'</span><span class="x" style="color:var(--dim);cursor:pointer;padding:0 4px" onclick="fxDel('+i+')">✕</span></div>'; }).join('')
-      :'<div class="note">Nothing yet. What is this scene for?</div>');
+  if(D) fxMigrate(D);
+  if(document.activeElement!==f) f.value=D?(D.focus||''):'';
+  f.disabled=!D; fitFocus();
+  $('pinBtn').textContent=D&&D.pin?'★':'☆'; $('pinBtn').disabled=!D;
+  renderPins();
 }
-function fxAdd(){
-  const D=curDraft!==null?DB.drafts[curDraft]:null, v=$('fxIn').value.trim(); if(!D||!v) return;
-  D.fx=D.fx||[]; D.fx.push({ty:FXTY,t:v,ts:Date.now()}); D.up=Date.now(); save(); renderFocus(); $('fxIn').focus();
+function focusSave(){
+  const D=curDraft!==null?DB.drafts[curDraft]:null; if(!D) return;
+  D.focus=$('focusTxt').value; D.up=Date.now(); D.wk=Date.now(); fitFocus();
+  clearTimeout(focusT); focusT=setTimeout(()=>{ focusT=null; save(); renderPins(); },500);
 }
-function fxDel(i){
-  const D=DB.drafts[curDraft]; if(!D||!D.fx||!confirm('Remove this line?\n\n'+D.fx[i].t)) return;
-  D.fx.splice(i,1); D.up=Date.now(); save(); renderFocus();
+function pinToggle(){
+  const D=curDraft!==null?DB.drafts[curDraft]:null; if(!D) return;
+  if(D.pin) delete D.pin;
+  else {
+    if(draftsHere().filter(x=>x.d.pin).length>=5) return alert('Five scenes are pinned already. Unpin one first: open it and tap ★.');
+    D.pin=Date.now();
+  }
+  D.up=Date.now(); save(); renderFocus();
+}
+function renderPins(){
+  const b=$('pinBox'); if(!b) return;
+  const list=draftsHere().filter(x=>x.d.pin).sort((a,c)=>(c.d.wk||c.d.pin||0)-(a.d.wk||a.d.pin||0));
+  if(!list.length){ b.innerHTML='<div class="note">Tap <b style="color:var(--acc)">☆</b> next to a scene to pin it here (up to 5). Pinned scenes sort by last worked on.</div>'; return; }
+  b.innerHTML='<h3 style="margin-top:8px">PINNED · '+list.length+'/5</h3>'+list.map((x,k)=>{
+    const f=(x.d.focus||'').split('\n').find(l=>l.trim())||'';
+    return '<div class="en" onclick="pickDraft('+x.i+')" style="cursor:pointer;border-color:'+(x.i===curDraft?'var(--acc)':'var(--line)')+(x.i===curDraft?';background:rgba(212,162,78,.06)':'')+'">'
+      +'<span class="tag" style="color:var(--dim)">'+(k===0?'<b style="color:var(--acc)">● LAST WORKED ON</b> · ':'')+esc(x.d.title)+'</span>'
+      +(f?'<span style="color:var(--good)">'+esc(f)+'</span>':'<span style="color:var(--dim)">no focus yet</span>')+'</div>';
+  }).join('');
 }
 
 /* ---- scene export: pick scenes (or all) in the order you're working in, out as
@@ -2344,7 +2368,7 @@ function expOpen(){
   if(!list.length){ alert('No scenes here yet.'); return; }
   const P=pget(), wc=t=>((t||'').match(/\S+/g)||[]).length;
   $('expWhere').textContent=DB.arena+(P.cur&&P.cur!=='ALL'?' · '+P.cur:'');
-  $('expList').innerHTML=list.map((d,i)=>'<label class="dpick" style="display:flex;gap:10px;align-items:center"><input type="checkbox" class="expC" value="'+esc(d.id)+'" checked onchange="expBuild()"><span><span class="ordN">'+(i+1)+'</span>'+esc(d.title)+' <span style="color:var(--dim)">· '+wc(d.txt)+' words'+((d.fx||[]).length?' · '+d.fx.length+' focus':'')+'</span></span></label>').join('');
+  $('expList').innerHTML=list.map((d,i)=>'<label class="dpick" style="display:flex;gap:10px;align-items:center"><input type="checkbox" class="expC" value="'+esc(d.id)+'" checked onchange="expBuild()"><span><span class="ordN">'+(i+1)+'</span>'+esc(d.title)+' <span style="color:var(--dim)">· '+wc(d.txt)+' words'+(d.pin?' · ★':'')+(d.focus&&d.focus.trim()?' · has focus':'')+'</span></span></label>').join('');
   $('expFx').checked=true; expBuild(); $('expModal').classList.add('on');
 }
 function expAll(on){ document.querySelectorAll('.expC').forEach(c=>c.checked=on); expBuild(); }
@@ -2353,7 +2377,7 @@ function expText(){
   return expScenes().filter(d=>ids.indexOf(d.id)>=0).map(d=>{
     let txt=String(d.txt||'').replace(/\r\n?/g,'\n').trim();
     const lines=txt.split('\n'), head=impIsHead(lines[0]||'');
-    const fx=withFx?(d.fx||[]).map(x=>'[['+fxOf(x.ty)[1]+': '+x.t.replace(/\]\]/g,'] ]')+']]').join('\n'):'';
+    const fx=withFx?String(d.focus||'').split('\n').filter(l=>l.trim()).map(l=>'[['+l.trim().replace(/\]\]/g,'] ]')+']]').join('\n'):'';
     if(head) return lines[0]+(fx?'\n\n'+fx:'')+(lines.length>1?'\n'+lines.slice(1).join('\n'):'');
     return '/* '+String(d.title||'untitled').replace(/\*\//g,'* /')+' */'+(fx?'\n\n'+fx:'')+(txt?'\n\n'+txt:'');
   }).join('\n\n\n');
