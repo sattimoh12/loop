@@ -202,7 +202,7 @@
       <span class="on" data-m="write" onclick="draftMode('write')">WRITE</span><span data-m="order" onclick="draftMode('order')">ORDER</span>
     </div>
     <div id="dWrite">
-      <div class="note">The straight attempt — the scene itself, rules on, typed here. Autosaves as you go. When a wall appears, don't solve it: bank it in the box below with <b style="color:var(--acc)">&gt;</b> and keep writing. Scene text never leaves this device — exports carry titles and word counts only.</div>
+      <div class="note">The straight attempt — the scene itself, rules on, typed here. Autosaves as you go. When a wall appears, don't solve it: bank it in the box below with <b style="color:var(--acc)">&gt;</b> and keep writing. Scene text stays on your devices and, with SYNC on, your private loop-data repo — the .md digest carries titles and word counts only.</div>
       <div class="ctl">
         <select id="draftSel" onchange="pickDraft(this.value)" style="background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px;max-width:60%"></select>
         <button class="btn" onclick="newDraft()">＋ new scene</button>
@@ -1998,8 +1998,8 @@ document.addEventListener('focusout',()=>setTimeout(()=>{ if(SY.dirty) syRefresh
    is a full version log. Refs images stay on the device they were added on. */
 var SK='sync_loop';   /* deliberately not 'loop…': FULL BACKUP copies every loop* key and must never carry the token */
 var SY={repo:'',tok:'',sha:'',okAt:0,etag:'',last:'',busy:false,again:false,t:null,first:0,status:'off',err:'',applying:false,dirty:false};
-try{ const o=JSON.parse(localStorage.getItem(SK)||'{}'); ['repo','tok','sha','okAt','etag','last'].forEach(k=>{ if(o[k]) SY[k]=o[k]; }); }catch(e){}
-function sySave(){ try{ localStorage.setItem(SK,JSON.stringify({repo:SY.repo,tok:SY.tok,sha:SY.sha,okAt:SY.okAt,etag:SY.etag,last:SY.last})); }catch(e){} }
+try{ const o=JSON.parse(localStorage.getItem(SK)||'{}'); ['repo','tok','sha','okAt','etag','last','seen'].forEach(k=>{ if(o[k]) SY[k]=o[k]; }); }catch(e){}
+function sySave(){ try{ localStorage.setItem(SK,JSON.stringify({repo:SY.repo,tok:SY.tok,sha:SY.sha,okAt:SY.okAt,etag:SY.etag,last:SY.last,seen:SY.seen||[]})); }catch(e){} }
 const syOnNow=()=>!!(SY.repo&&SY.tok);
 function syB64(str){ const u=new TextEncoder().encode(str); let s=''; for(let i=0;i<u.length;i+=32768) s+=String.fromCharCode.apply(null,u.subarray(i,i+32768)); return btoa(s); }
 function syUnb64(b){ const bin=atob(b.replace(/\s/g,'')), u=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i); return new TextDecoder().decode(u); }
@@ -2014,7 +2014,7 @@ async function syRun(){
   if(!syOnNow()) return;
   if(SY.busy){ SY.again=true; return; }
   SY.busy=true;
-  try{ await syPull(); await syPush(); SY.okAt=Date.now(); sySave(); syStatus('live'); }
+  try{ await syPull(); await syInbox(); await syPush(); SY.okAt=Date.now(); sySave(); syStatus('live'); }
   catch(e){ syStatus('error',e.message||String(e)); }
   SY.busy=false;
   if(SY.again){ SY.again=false; syRun(); }
@@ -2055,6 +2055,30 @@ async function syPush(){
   }
   if(!r.ok) throw new Error(syWhy(r));
   const j=await r.json(); SY.sha=j.content.sha; SY.last=txt; sySave();
+}
+/* scenes Claude drops into the repo as inbox-*.json files land in STRAIGHT once,
+   matched by id, so the second device (which may already have them through
+   data.json) never doubles them. The inbox files are never edited or deleted here. */
+async function syInbox(){
+  const h={'Authorization':'Bearer '+SY.tok,'X-GitHub-Api-Version':'2022-11-28'};
+  const r=await fetch('https://api.github.com/repos/'+SY.repo+'/contents/?t='+Date.now(),{cache:'no-store',headers:Object.assign({'Accept':'application/vnd.github+json'},h)});
+  if(!r.ok) return;
+  SY.seen=SY.seen||[];
+  const list=(await r.json()).filter(f=>f.type==='file'&&/^inbox-.*\.json$/.test(f.name)&&SY.seen.indexOf(f.sha)<0);
+  let added=0;
+  for(const f of list){
+    const g=await fetch('https://api.github.com/repos/'+SY.repo+'/contents/'+encodeURIComponent(f.name)+'?t='+Date.now(),{cache:'no-store',headers:Object.assign({'Accept':'application/vnd.github.raw+json'},h)});
+    if(!g.ok) continue;
+    let o; try{ o=JSON.parse(await g.text()); }catch(e){ SY.seen.push(f.sha); continue; }
+    (o.drafts||[]).forEach(d=>{
+      if(!d||!d.id||DB.drafts.some(x=>x.id===d.id)) return;
+      DB.drafts.push({id:d.id,title:d.title||'Pasted scene',txt:d.txt||'',ar:d.ar||DB.arenas[0],pj:d.pj||'',d:d.d||today(),up:d.up||Date.now()});
+      added++;
+    });
+    SY.seen.push(f.sha);
+  }
+  if(list.length) sySave();
+  if(added){ save(); syRefresh(); }
 }
 function syStatus(s,err){ SY.status=s; SY.err=err||''; syPaint(); }
 function syPaint(){
