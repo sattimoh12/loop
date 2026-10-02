@@ -206,10 +206,19 @@
       <div class="ctl">
         <select id="draftSel" onchange="pickDraft(this.value)" style="background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px;max-width:60%"></select>
         <button class="btn" onclick="newDraft()">＋ new scene</button>
+        <button class="btn" onclick="impOpen()">⇪ import scenes</button>
         <span class="note" id="draftMeta"></span>
       </div>
       <textarea id="draftTxt" oninput="autosaveDraft()" placeholder="INT. — the straight version…" style="width:100%;min-height:55vh;background:var(--panel);border:1px solid var(--line);border-radius:10px;color:var(--ink);font-size:15px;line-height:1.6;padding:16px;outline:none;font-family:'Courier New',monospace"></textarea>
     </div>
+    <div class="modal" id="impModal" onclick="if(event.target===this)this.classList.remove('on')"><div class="mcard">
+      <div class="q">IMPORT SCENES INTO <span id="impWhere"></span></div>
+      <div class="note">Paste a script, or choose a file (.txt, .fountain, .fdx). Every line starting INT. / EXT. / INT./EXT. / I/E / EST. starts a new scene; everything under it, up to the next heading, belongs to it.</div>
+      <label class="btn" style="cursor:pointer;display:inline-block;margin:4px 0">choose file…<input type="file" id="impFile" accept=".txt,.fountain,.fdx,.md,text/plain" style="display:none" onchange="impLoad(this)"></label>
+      <textarea id="impTxt" class="dinp" rows="9" placeholder="INT. KITCHEN — NIGHT&#10;&#10;She waits…" oninput="impPreview()" style="font-family:'Courier New',monospace;font-size:13px"></textarea>
+      <div id="impList" style="max-height:34vh;overflow:auto;margin:6px 0"></div>
+      <div class="ctl"><button class="btn primary" id="impGo" onclick="impGo()">IMPORT</button><button class="btn" onclick="$('impModal').classList.remove('on')">cancel</button></div>
+    </div></div>
     <div id="dOrder" style="display:none">
       <div class="note">Orders are sequences over the same scenes. Drag by the <b style="color:var(--ink)">≡</b> handle to move one; an amber line shows where it lands. Reordering never touches the scene text, and holding two orders costs nothing — duplicate one, move things, read both.</div>
       <div class="ctl">
@@ -2128,6 +2137,79 @@ function renderSync(){
     +'<div class="note">The setup code contains your token — paste it only into your own devices. Refs images stay on the device they were added on.</div>';
 }
 if(syOnNow()) syRun(); else syPaint();
+
+/* ---- STRAIGHT import: a pasted script or a .txt / .fountain / .fdx file, cut
+   at every scene heading. A heading line starts a scene; everything under it, up
+   to the next heading, is that scene. Nothing is saved until IMPORT is pressed,
+   scenes keep the script's order (and join the order you're working in), and a
+   scene whose text is already here is skipped rather than doubled. */
+function impIsHead(l){
+  const t=l.trim(); if(!t||t.length>140) return false;
+  if(/^\.(?!\.)[A-Za-z0-9]/.test(t)) return true;                                   /* Fountain forced heading */
+  const n='^(?:\\d+[A-Z]?[.):]?\\s+)?';
+  if(new RegExp(n+'(?:(?:INT|EXT|EST)\\.?\\s*\\/\\s*(?:INT|EXT)\\.?|I\\/E\\.?|(?:INT|EXT|EST)\\.)(?:\\s|$)','i').test(t)) return true;
+  return new RegExp(n+'(?:INT|EXT|EST)(?:\\s|$)').test(t);                          /* bare INT / EXT, capitals only */
+}
+function impParse(text){
+  const lines=String(text||'').replace(/\r\n?/g,'\n').split('\n'), out=[], pre=[]; let cur=null;
+  lines.forEach(l=>{
+    if(impIsHead(l)){ if(cur) out.push(cur); const h=l.trim().replace(/^\.(?=\S)/,''); cur={title:h,lines:[h]}; }
+    else if(cur) cur.lines.push(l.replace(/\s+$/,''));
+    else pre.push(l);
+  });
+  if(cur) out.push(cur);
+  return { scenes:out.map(s=>({title:s.title.replace(/\s*#[^#]*#\s*$/,'').replace(/\s+/g,' ').slice(0,120),
+                               txt:s.lines.join('\n').replace(/\n{3,}/g,'\n\n').trim()})),
+           pre:pre.join('\n').trim() };
+}
+/* Final Draft XML → plain screenplay text, one paragraph per line */
+function impFdx(xml){
+  const doc=new DOMParser().parseFromString(xml,'application/xml');
+  return [...doc.querySelectorAll('Content > Paragraph')].map(p=>{
+    const t=[...p.querySelectorAll('Text')].map(x=>x.textContent).join('');
+    const ty=p.getAttribute('Type')||'';
+    return ty==='Scene Heading'?t.toUpperCase():ty==='Character'?'\n'+t.toUpperCase():ty==='Action'?'\n'+t:t;
+  }).join('\n');
+}
+function impOpen(){
+  const P=pget();
+  $('impWhere').textContent=DB.arena+(P.cur&&P.cur!=='ALL'?' · '+P.cur:'');
+  $('impTxt').value=''; $('impFile').value=''; impPreview(); $('impModal').classList.add('on');
+}
+function impLoad(inp){
+  const f=inp.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=()=>{ let t=String(r.result); if(/\.fdx$/i.test(f.name)||/<FinalDraft/i.test(t.slice(0,400))) t=impFdx(t); $('impTxt').value=t; impPreview(); };
+  r.onerror=()=>alert('Could not read that file.');
+  r.readAsText(f);
+}
+const impDup=s=>DB.drafts.some(d=>d.ar===DB.arena&&(d.txt||'').trim()===s.txt);
+function impPreview(){
+  const R=impParse($('impTxt').value), n=R.scenes.filter(s=>!impDup(s)).length;
+  const wc=t=>(t.match(/\S+/g)||[]).length;
+  let h='';
+  if(!$('impTxt').value.trim()) h='<div class="note">Paste a script above or choose a file.</div>';
+  else if(!R.scenes.length) h='<div class="note" style="color:var(--bad)">No scene headings found. A heading is a line starting <b>INT.</b>, <b>EXT.</b>, <b>INT./EXT.</b>, <b>I/E</b> or <b>EST.</b> (a scene number in front is fine).</div>';
+  else {
+    h='<div class="note"><b style="color:var(--ink)">'+R.scenes.length+' scene'+(R.scenes.length>1?'s':'')+' found</b>'+(n<R.scenes.length?' · '+(R.scenes.length-n)+' already here, will be skipped':'')+'</div>';
+    h+=R.scenes.map((s,i)=>'<div class="dpick" style="cursor:default'+(impDup(s)?';color:var(--dim);text-decoration:line-through':'')+'"><span class="ordN">'+(i+1)+'</span>'+esc(s.title)+' <span style="color:var(--dim)">· '+wc(s.txt)+' words</span></div>').join('');
+    if(R.pre) h+='<div class="note">Text before the first heading ('+wc(R.pre)+' words — e.g. a title page) is left out.</div>';
+  }
+  $('impList').innerHTML=h;
+  const b=$('impGo'); b.disabled=!n; b.textContent=n?'IMPORT '+n+' SCENE'+(n>1?'S':''):'IMPORT';
+}
+function impGo(){
+  const R=impParse($('impTxt').value), todo=R.scenes.filter(s=>!impDup(s)); if(!todo.length) return;
+  const P=pget(), o=curOrder(), first=DB.drafts.length;
+  todo.forEach((s,k)=>{
+    const id=uid()+k;
+    DB.drafts.push({id,title:s.title,txt:s.txt,ar:DB.arena,pj:(P.cur&&P.cur!=='ALL'?P.cur:''),d:today(),up:Date.now()});
+    if(o&&o.seq.indexOf(id)<0) o.seq.push(id);
+  });
+  if(o) o.up=Date.now();
+  curDraft=first; save(); $('impModal').classList.remove('on'); renderDraft();
+  alert('Imported '+todo.length+' scene'+(todo.length>1?'s':'')+' into STRAIGHT.');
+}
 
 /* DISCS is the opening screen */
 renderDiscs();
