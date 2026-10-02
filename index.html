@@ -156,6 +156,7 @@
   .dlb { font-size:16px; font-weight:600; line-height:1.35; }
   .dtx { font-size:14.5px; line-height:1.5; white-space:pre-wrap; margin-top:4px; }
   .dlink { font-size:13.5px; line-height:1.5; padding:7px 0; border-top:1px solid var(--line); }
+  .mcard input[type=checkbox] { width:auto; margin:0; padding:0; flex:none; accent-color:var(--acc); }
   .dpick { padding:8px 2px; border-top:1px solid var(--line); font-size:14px; cursor:pointer; line-height:1.4; }
 </style>
 </head>
@@ -207,17 +208,27 @@
         <select id="draftSel" onchange="pickDraft(this.value)" style="background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px;max-width:60%"></select>
         <button class="btn" onclick="newDraft()">＋ new scene</button>
         <button class="btn" onclick="impOpen()">⇪ import scenes</button>
+        <button class="btn" onclick="expOpen()">⇩ export scenes</button>
         <span class="note" id="draftMeta"></span>
       </div>
       <textarea id="draftTxt" oninput="autosaveDraft()" placeholder="INT. — the straight version…" style="width:100%;min-height:55vh;background:var(--panel);border:1px solid var(--line);border-radius:10px;color:var(--ink);font-size:15px;line-height:1.6;padding:16px;outline:none;font-family:'Courier New',monospace"></textarea>
+      <div id="focusBox"></div>
     </div>
     <div class="modal" id="impModal" onclick="if(event.target===this)this.classList.remove('on')"><div class="mcard">
       <div class="q">IMPORT SCENES INTO <span id="impWhere"></span></div>
-      <div class="note">Paste a script, or choose a file (.txt, .fountain, .fdx). Every line starting INT. / EXT. / INT./EXT. / I/E / EST. starts a new scene; everything under it, up to the next heading, belongs to it.</div>
+      <div class="note">Paste a script, or choose a file (.txt, .fountain, .fdx). Every line starting INT. / EXT. / INT./EXT. / I/E / EST. starts a scene; everything under it, up to the next heading, belongs to it. Re-paste a revised scene and it replaces the old one.</div>
       <label class="btn" style="cursor:pointer;display:inline-block;margin:4px 0">choose file…<input type="file" id="impFile" accept=".txt,.fountain,.fdx,.md,text/plain" style="display:none" onchange="impLoad(this)"></label>
       <textarea id="impTxt" class="dinp" rows="9" placeholder="INT. KITCHEN — NIGHT&#10;&#10;She waits…" oninput="impPreview()" style="font-family:'Courier New',monospace;font-size:13px"></textarea>
       <div id="impList" style="max-height:34vh;overflow:auto;margin:6px 0"></div>
       <div class="ctl"><button class="btn primary" id="impGo" onclick="impGo()">IMPORT</button><button class="btn" onclick="$('impModal').classList.remove('on')">cancel</button></div>
+    </div></div>
+    <div class="modal" id="expModal" onclick="if(event.target===this)this.classList.remove('on')"><div class="mcard">
+      <div class="q">EXPORT SCENES FROM <span id="expWhere"></span></div>
+      <div class="ctl" style="align-items:center"><button class="btn" onclick="expAll(true)">all</button><button class="btn" onclick="expAll(false)">none</button><span class="note" id="expCount"></span></div>
+      <div id="expList" style="max-height:30vh;overflow:auto;margin:4px 0 8px"></div>
+      <label class="note" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="expFx" checked onchange="expBuild()"> include each scene's focus lines (as [[notes]])</label>
+      <textarea id="expOut" class="dinp" rows="8" readonly style="font-family:'Courier New',monospace;font-size:12.5px"></textarea>
+      <div class="ctl"><button class="btn primary" onclick="expCopy()">COPY</button><button class="btn" onclick="expFile()">⇩ .fountain file</button><button class="btn" onclick="$('expModal').classList.remove('on')">close</button></div>
     </div></div>
     <div id="dOrder" style="display:none">
       <div class="note">Orders are sequences over the same scenes. Drag by the <b style="color:var(--ink)">≡</b> handle to move one; an amber line shows where it lands. Reordering never touches the scene text, and holding two orders costs nothing — duplicate one, move things, read both.</div>
@@ -1352,6 +1363,7 @@ function renderDraft(){
   $('draftTxt').value=D?D.txt:'';
   $('draftTxt').disabled=!D;
   $('draftMeta').textContent=D?`${(D.txt.trim().match(/\S+/g)||[]).length} words · ${D.pj||D.ar}`:'';
+  renderFocus();
   reorderIfOpen();
 }
 function commitDraft(){
@@ -2138,11 +2150,19 @@ function renderSync(){
 }
 if(syOnNow()) syRun(); else syPaint();
 
-/* ---- STRAIGHT import: a pasted script or a .txt / .fountain / .fdx file, cut
-   at every scene heading. A heading line starts a scene; everything under it, up
-   to the next heading, is that scene. Nothing is saved until IMPORT is pressed,
-   scenes keep the script's order (and join the order you're working in), and a
-   scene whose text is already here is skipped rather than doubled. */
+/* ---- STRAIGHT import ----
+   Built for pasting chunks out of the screenwriting app, again and again. The only
+   thing the writer supplies is the heading line (INT./EXT. place – time):
+   - a heading starts a scene; everything under it, up to the next heading, is it
+   - a pasted scene whose heading matches exactly ONE scene already here replaces
+     that scene's text (a revised scene, re-pasted); headings that repeat in the
+     script come in as new scenes
+   - text above the first heading (a note, or the tail of a scene begun in the last
+     chunk) becomes a NOTE in the focus of the scene open in STRAIGHT — which a later
+     re-import can't wipe — or, by choice, the end of its text or a notes scene
+   - new scenes slot into the order right after the scene before them in the chunk
+   Every preview row says what will happen and can be tapped to change it; nothing
+   is saved until IMPORT. */
 function impIsHead(l){
   const t=l.trim(); if(!t||t.length>140) return false;
   if(/^\.(?!\.)[A-Za-z0-9]/.test(t)) return true;                                   /* Fountain forced heading */
@@ -2150,17 +2170,29 @@ function impIsHead(l){
   if(new RegExp(n+'(?:(?:INT|EXT|EST)\\.?\\s*\\/\\s*(?:INT|EXT)\\.?|I\\/E\\.?|(?:INT|EXT|EST)\\.)(?:\\s|$)','i').test(t)) return true;
   return new RegExp(n+'(?:INT|EXT|EST)(?:\\s|$)').test(t);                          /* bare INT / EXT, capitals only */
 }
+/* the heading as shown: Fountain's leading dot, #scene-number# and a repeated
+   trailing number ("12 INT. KITCHEN – NIGHT 12") come off */
+function impTitle(h){
+  let t=h.trim().replace(/^\.(?=\S)/,'').replace(/\s*#[^#]*#\s*$/,'');
+  const m=t.match(/^(\d+[A-Z]?)[.):]?\s+(.*?)\s+\1[.)]?$/); if(m) t=m[1]+' '+m[2];
+  return t.replace(/\s+/g,' ').slice(0,120);
+}
+/* the heading as matched: no scene numbers, any dash, any case, any spacing */
+const impNorm=h=>impTitle(String(h||'')).toUpperCase().replace(/^\d+[A-Z]?[.):]?\s+/,'').replace(/\s+\d+[A-Z]?[.)]?$/,'')
+  .replace(/[–—]/g,'-').replace(/\s*-+\s*/g,' - ').replace(/\s+/g,' ').trim();
+/* the scene number on a heading ("12", "2A"), if the writing app put one there */
+const impNum=h=>{ const m=impTitle(String(h||'')).match(/^(\d+)([A-Z]?)[.):]?\s+/i); return m?{n:+m[1],s:m[2].toUpperCase(),k:m[1]+m[2].toUpperCase()}:null; };
+const impCmp=(a,b)=>a.n-b.n||(a.s<b.s?-1:a.s>b.s?1:0);
 function impParse(text){
   const lines=String(text||'').replace(/\r\n?/g,'\n').split('\n'), out=[], pre=[]; let cur=null;
   lines.forEach(l=>{
-    if(impIsHead(l)){ if(cur) out.push(cur); const h=l.trim().replace(/^\.(?=\S)/,''); cur={title:h,lines:[h]}; }
+    if(impIsHead(l)){ if(cur) out.push(cur); const h=impTitle(l); cur={title:h,lines:[h]}; }
     else if(cur) cur.lines.push(l.replace(/\s+$/,''));
-    else pre.push(l);
+    else pre.push(l.replace(/\s+$/,''));
   });
   if(cur) out.push(cur);
-  return { scenes:out.map(s=>({title:s.title.replace(/\s*#[^#]*#\s*$/,'').replace(/\s+/g,' ').slice(0,120),
-                               txt:s.lines.join('\n').replace(/\n{3,}/g,'\n\n').trim()})),
-           pre:pre.join('\n').trim() };
+  return { scenes:out.map(s=>({title:s.title,txt:s.lines.join('\n').replace(/\n{3,}/g,'\n\n').trim()})),
+           pre:pre.join('\n').replace(/\n{3,}/g,'\n\n').trim() };
 }
 /* Final Draft XML → plain screenplay text, one paragraph per line */
 function impFdx(xml){
@@ -2171,10 +2203,12 @@ function impFdx(xml){
     return ty==='Scene Heading'?t.toUpperCase():ty==='Character'?'\n'+t.toUpperCase():ty==='Action'?'\n'+t:t;
   }).join('\n');
 }
+let IMP={sig:null,plan:[],pre:'',preMode:'skip',open:null};
 function impOpen(){
   const P=pget();
   $('impWhere').textContent=DB.arena+(P.cur&&P.cur!=='ALL'?' · '+P.cur:'');
-  $('impTxt').value=''; $('impFile').value=''; impPreview(); $('impModal').classList.add('on');
+  $('impTxt').value=''; $('impFile').value=''; IMP.sig=null; impPreview(); $('impModal').classList.add('on');
+  setTimeout(()=>$('impTxt').focus(),50);
 }
 function impLoad(inp){
   const f=inp.files[0]; if(!f) return;
@@ -2183,32 +2217,163 @@ function impLoad(inp){
   r.onerror=()=>alert('Could not read that file.');
   r.readAsText(f);
 }
-const impDup=s=>DB.drafts.some(d=>d.ar===DB.arena&&(d.txt||'').trim()===s.txt);
+/* work out what each pasted scene will do; recomputed only when the text changes,
+   so taps on the preview survive */
+function impPlan(){
+  const txt=$('impTxt').value; if(txt===IMP.sig) return; IMP.sig=txt;
+  const R=impParse(txt), here=draftsHere().map(x=>x.d), used=new Set();
+  IMP.plan=R.scenes.map(s=>{
+    const same=here.find(d=>(d.txt||'').trim()===s.txt);
+    /* numbered: the scene with the same number, even if the heading changed;
+       otherwise the one scene with the same heading (numbers must not disagree) */
+    const n=impNum(s.title);
+    let m=n?here.filter(d=>{ const x=impNum(d.title); return x&&x.k===n.k; }):[];
+    if(m.length!==1) m=here.filter(d=>{ const x=impNum(d.title); return impNorm(d.title)===impNorm(s.title)&&!(n&&x&&x.k!==n.k); });
+    const target=(m.length===1&&!used.has(m[0].id))?m[0]:null;
+    if(target) used.add(target.id);
+    return {s,same,target,act:same?'skip':target?'replace':'new'};
+  });
+  IMP.pre=R.pre;
+  const od=curDraft!==null?DB.drafts[curDraft]:null;
+  IMP.open=(od&&here.indexOf(od)>=0)?od:null;
+  IMP.preMode=R.pre?(IMP.open?'focus':'note'):'skip';
+}
+function impCycle(i){
+  const p=IMP.plan[i], opts=p.target?['replace','new','skip']:['new','skip'];
+  p.act=opts[(opts.indexOf(p.act)+1)%opts.length]; impPreview();
+}
+function impPreCycle(){
+  const opts=IMP.open?['focus','append','note','skip']:['note','skip'];
+  IMP.preMode=opts[(opts.indexOf(IMP.preMode)+1)%opts.length]; impPreview();
+}
 function impPreview(){
-  const R=impParse($('impTxt').value), n=R.scenes.filter(s=>!impDup(s)).length;
-  const wc=t=>(t.match(/\S+/g)||[]).length;
+  impPlan();
+  const wc=t=>((t||'').match(/\S+/g)||[]).length;
+  const chip=(c,t)=>'<span class="chip core" style="color:'+c+';flex:none">'+t+'</span>';
   let h='';
-  if(!$('impTxt').value.trim()) h='<div class="note">Paste a script above or choose a file.</div>';
-  else if(!R.scenes.length) h='<div class="note" style="color:var(--bad)">No scene headings found. A heading is a line starting <b>INT.</b>, <b>EXT.</b>, <b>INT./EXT.</b>, <b>I/E</b> or <b>EST.</b> (a scene number in front is fine).</div>';
+  if(!$('impTxt').value.trim()) h='<div class="note">Paste from your screenwriting app above, or choose a file.</div>';
   else {
-    h='<div class="note"><b style="color:var(--ink)">'+R.scenes.length+' scene'+(R.scenes.length>1?'s':'')+' found</b>'+(n<R.scenes.length?' · '+(R.scenes.length-n)+' already here, will be skipped':'')+'</div>';
-    h+=R.scenes.map((s,i)=>'<div class="dpick" style="cursor:default'+(impDup(s)?';color:var(--dim);text-decoration:line-through':'')+'"><span class="ordN">'+(i+1)+'</span>'+esc(s.title)+' <span style="color:var(--dim)">· '+wc(s.txt)+' words</span></div>').join('');
-    if(R.pre) h+='<div class="note">Text before the first heading ('+wc(R.pre)+' words — e.g. a title page) is left out.</div>';
+    if(IMP.pre){
+      const lab={focus:chip('var(--vio)','→ note in focus of “'+esc((IMP.open||{}).title||'')+'”'),append:chip('var(--blue)','→ end of “'+esc((IMP.open||{}).title||'')+'” text'),note:chip('var(--vio)','＋ notes scene'),skip:chip('var(--dim)','– leave out')}[IMP.preMode];
+      h+='<div class="dpick" onclick="impPreCycle()" style="display:flex;gap:8px;align-items:center;justify-content:space-between"><span><span style="color:var(--dim)">above the first heading</span> · '+wc(IMP.pre)+' words</span>'+lab+'</div>';
+    }
+    h+=IMP.plan.map((p,i)=>{
+      const lab={new:chip('var(--good)','＋ new'),replace:chip('var(--acc)','↻ replaces ('+wc(p.target&&p.target.txt)+'→'+wc(p.s.txt)+' words)'),skip:chip('var(--dim)',p.same?'– already here':'– skip')}[p.act];
+      return '<div class="dpick" onclick="impCycle('+i+')" style="display:flex;gap:8px;align-items:center;justify-content:space-between"><span><span class="ordN">'+(i+1)+'</span>'+esc(p.s.title)+' <span style="color:var(--dim)">· '+wc(p.s.txt)+' words</span></span>'+lab+'</div>';
+    }).join('');
+    if(!IMP.plan.length&&!IMP.pre) h='<div class="note">Nothing to import.</div>';
+    h='<div class="note">'+(IMP.plan.length?'<b style="color:var(--ink)">'+IMP.plan.length+' scene'+(IMP.plan.length>1?'s':'')+'</b> · ':'No scene headings — ')+'tap a row to change what happens to it.</div>'+h;
   }
   $('impList').innerHTML=h;
-  const b=$('impGo'); b.disabled=!n; b.textContent=n?'IMPORT '+n+' SCENE'+(n>1?'S':''):'IMPORT';
+  const n=IMP.plan.filter(p=>p.act!=='skip').length+(IMP.pre&&IMP.preMode!=='skip'?1:0);
+  const b=$('impGo'); b.disabled=!n; b.textContent=n?'IMPORT':'NOTHING TO IMPORT';
 }
 function impGo(){
-  const R=impParse($('impTxt').value), todo=R.scenes.filter(s=>!impDup(s)); if(!todo.length) return;
-  const P=pget(), o=curOrder(), first=DB.drafts.length;
-  todo.forEach((s,k)=>{
-    const id=uid()+k;
-    DB.drafts.push({id,title:s.title,txt:s.txt,ar:DB.arena,pj:(P.cur&&P.cur!=='ALL'?P.cur:''),d:today(),up:Date.now()});
-    if(o&&o.seq.indexOf(id)<0) o.seq.push(id);
+  impPlan();
+  const P=pget(), o=curOrder(), pj=(P.cur&&P.cur!=='ALL'?P.cur:''), now=Date.now();
+  let last=null, focus=null; const c={nw:0,rp:0,pre:''};
+  /* a numbered scene goes after the highest-numbered scene below it in the order;
+     an unnumbered one after the scene before it in the pasted chunk */
+  const place=(id,title)=>{
+    if(!o||o.seq.indexOf(id)>=0) return;
+    const n=impNum(title);
+    if(n){
+      let at=-1, anyNum=false;
+      o.seq.forEach((sid,i)=>{ const d=DB.drafts.find(x=>x.id===sid), x=d&&impNum(d.title); if(!x) return; anyNum=true; if(impCmp(x,n)<=0) at=i; });
+      if(anyNum){ if(at>=0) o.seq.splice(at+1,0,id); else { const f=o.seq.findIndex(sid=>{ const d=DB.drafts.find(x=>x.id===sid); return d&&impNum(d.title); }); o.seq.splice(f,0,id); } return; }
+    }
+    const i=last?o.seq.indexOf(last):-1; if(i>=0) o.seq.splice(i+1,0,id); else o.seq.push(id);
+  };
+  const add=(title,txt)=>{ const id=uid()+Math.random().toString(36).slice(2,5); DB.drafts.push({id,title,txt,ar:DB.arena,pj,d:today(),up:now}); place(id,title); last=id; if(!focus) focus=id; return id; };
+  if(IMP.pre&&IMP.preMode==='focus'&&IMP.open){
+    IMP.open.fx=IMP.open.fx||[]; IMP.open.fx.push({ty:'note',t:IMP.pre,ts:now}); IMP.open.up=now; last=IMP.open.id; focus=IMP.open.id; c.pre='kept as a NOTE in the focus of “'+IMP.open.title+'”';
+  } else if(IMP.pre&&IMP.preMode==='append'&&IMP.open){
+    IMP.open.txt=(IMP.open.txt||'').replace(/\s+$/,'')+'\n\n'+IMP.pre; IMP.open.up=now; last=IMP.open.id; focus=IMP.open.id; c.pre='added to the end of “'+IMP.open.title+'”';
+  } else if(IMP.pre&&IMP.preMode==='note'){
+    if(IMP.open) last=IMP.open.id;
+    add('Notes · '+today(),IMP.pre); c.pre='kept as a notes scene';
+  }
+  IMP.plan.forEach(p=>{
+    if(p.act==='skip'){ const d=p.same||p.target; if(d) last=d.id; return; }
+    if(p.act==='replace'&&p.target){ p.target.txt=p.s.txt; p.target.title=p.s.title; p.target.up=now; last=p.target.id; if(!focus) focus=p.target.id; c.rp++; return; }
+    add(p.s.title,p.s.txt); c.nw++;
   });
-  if(o) o.up=Date.now();
-  curDraft=first; save(); $('impModal').classList.remove('on'); renderDraft();
-  alert('Imported '+todo.length+' scene'+(todo.length>1?'s':'')+' into STRAIGHT.');
+  if(o) o.up=now;
+  const fi=DB.drafts.findIndex(d=>d.id===focus); if(fi>=0) curDraft=fi;
+  save(); $('impModal').classList.remove('on'); IMP.sig=null; renderDraft();
+  alert(['Imported into STRAIGHT:',c.nw?c.nw+' new scene'+(c.nw>1?'s':''):'',c.rp?c.rp+' updated':'',c.pre?'the text above the first heading was '+c.pre:''].filter(Boolean).join('\n'));
+}
+
+/* ---- per-scene FOCUS: what the scene is for, kept apart from the scene text so
+   re-importing a revised scene from the writing app never touches it ---- */
+const FX=[['compass','COMPASS','var(--acc)'],['fog','FOG','var(--ink)'],['cand','CANDIDATE LINE','var(--good)'],['link','LINK','var(--blue)'],['note','NOTE','var(--vio)']];
+const fxOf=k=>FX.find(f=>f[0]===k)||FX[4];
+let FXTY='compass';
+function renderFocus(){
+  const b=$('focusBox'); if(!b) return;
+  const D=curDraft!==null?DB.drafts[curDraft]:null;
+  if(!D){ b.innerHTML=''; return; }
+  const list=D.fx||[];
+  b.innerHTML='<h3>FOCUS OF THIS SCENE</h3>'
+    +'<div class="chips wrapc">'+FX.map(f=>'<span class="chip core'+(f[0]===FXTY?' on':'')+'" style="color:'+f[2]+'" onclick="FXTY=\''+f[0]+'\';renderFocus();$(\'fxIn\').focus()">'+f[1]+'</span>').join('')+'</div>'
+    +'<input id="fxIn" class="dinp" placeholder="'+fxOf(FXTY)[1].toLowerCase()+' for this scene — Enter adds it" autocomplete="off" onkeydown="if(event.key===\'Enter\'){event.preventDefault();fxAdd();}">'
+    +(list.length?list.map((x,i)=>{ const f=fxOf(x.ty);
+        return '<div class="en" style="border-color:'+f[2]+';display:flex;gap:8px;justify-content:space-between"><span style="white-space:pre-wrap"><span class="tag" style="color:'+f[2]+'">'+f[1]+'</span>'+esc(x.t)+'</span><span class="x" style="color:var(--dim);cursor:pointer;padding:0 4px" onclick="fxDel('+i+')">✕</span></div>'; }).join('')
+      :'<div class="note">Nothing yet. What is this scene for?</div>');
+}
+function fxAdd(){
+  const D=curDraft!==null?DB.drafts[curDraft]:null, v=$('fxIn').value.trim(); if(!D||!v) return;
+  D.fx=D.fx||[]; D.fx.push({ty:FXTY,t:v,ts:Date.now()}); D.up=Date.now(); save(); renderFocus(); $('fxIn').focus();
+}
+function fxDel(i){
+  const D=DB.drafts[curDraft]; if(!D||!D.fx||!confirm('Remove this line?\n\n'+D.fx[i].t)) return;
+  D.fx.splice(i,1); D.up=Date.now(); save(); renderFocus();
+}
+
+/* ---- scene export: pick scenes (or all) in the order you're working in, out as
+   Fountain — focus lines ride along as [[notes]], which writing apps keep as notes ---- */
+function expScenes(){
+  const P=pget(), here=draftsHere().map(x=>x.d), o=curOrder(), by={};
+  here.forEach(d=>by[d.id]=d);
+  const seq=o?o.seq.filter(id=>by[id]):[];
+  return seq.map(id=>by[id]).concat(here.filter(d=>seq.indexOf(d.id)<0));
+}
+function expOpen(){
+  flushPending();
+  const list=expScenes();
+  if(!list.length){ alert('No scenes here yet.'); return; }
+  const P=pget(), wc=t=>((t||'').match(/\S+/g)||[]).length;
+  $('expWhere').textContent=DB.arena+(P.cur&&P.cur!=='ALL'?' · '+P.cur:'');
+  $('expList').innerHTML=list.map((d,i)=>'<label class="dpick" style="display:flex;gap:10px;align-items:center"><input type="checkbox" class="expC" value="'+esc(d.id)+'" checked onchange="expBuild()"><span><span class="ordN">'+(i+1)+'</span>'+esc(d.title)+' <span style="color:var(--dim)">· '+wc(d.txt)+' words'+((d.fx||[]).length?' · '+d.fx.length+' focus':'')+'</span></span></label>').join('');
+  $('expFx').checked=true; expBuild(); $('expModal').classList.add('on');
+}
+function expAll(on){ document.querySelectorAll('.expC').forEach(c=>c.checked=on); expBuild(); }
+function expText(){
+  const ids=[...document.querySelectorAll('.expC')].filter(c=>c.checked).map(c=>c.value), withFx=$('expFx').checked;
+  return expScenes().filter(d=>ids.indexOf(d.id)>=0).map(d=>{
+    let txt=String(d.txt||'').replace(/\r\n?/g,'\n').trim();
+    const lines=txt.split('\n'), head=impIsHead(lines[0]||'');
+    const fx=withFx?(d.fx||[]).map(x=>'[['+fxOf(x.ty)[1]+': '+x.t.replace(/\]\]/g,'] ]')+']]').join('\n'):'';
+    if(head) return lines[0]+(fx?'\n\n'+fx:'')+(lines.length>1?'\n'+lines.slice(1).join('\n'):'');
+    return '/* '+String(d.title||'untitled').replace(/\*\//g,'* /')+' */'+(fx?'\n\n'+fx:'')+(txt?'\n\n'+txt:'');
+  }).join('\n\n\n');
+}
+function expBuild(){
+  const n=[...document.querySelectorAll('.expC')].filter(c=>c.checked).length;
+  $('expOut').value=n?expText():'';
+  $('expCount').textContent=n+' scene'+(n===1?'':'s')+' selected';
+}
+function expCopy(){
+  const t=$('expOut'); if(!t.value.trim()) return alert('Select at least one scene.');
+  t.select(); t.setSelectionRange(0,t.value.length);
+  const ok=()=>alert('Copied — paste it into Fade In, Notes or anywhere.');
+  if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(t.value).then(ok,()=>{ document.execCommand('copy'); ok(); });
+  else { document.execCommand('copy'); ok(); }
+}
+function expFile(){
+  const t=$('expOut').value; if(!t.trim()) return alert('Select at least one scene.');
+  const P=pget(), name=(DB.arena+(P.cur&&P.cur!=='ALL'?'-'+P.cur:'')+'-scenes-'+today()).replace(/[^\w\-]+/g,'_')+'.fountain';
+  deliver(t,name,'text/plain');
 }
 
 /* DISCS is the opening screen */
