@@ -214,6 +214,7 @@
         <button class="btn" onclick="newDraft()">＋ new scene</button>
         <button class="btn" onclick="impOpen()">⇪ import scenes</button>
         <button class="btn" onclick="expOpen()">⇩ export scenes</button>
+        <button class="btn" onclick="if(curDraft!==null)toDiscs(curDraft)" style="color:var(--acc)">→ DISCS</button>
         <span class="note" id="draftMeta"></span>
       </div>
       <textarea id="draftTxt" oninput="autosaveDraft()" placeholder="INT. — the straight version…" style="width:100%;min-height:55vh;background:var(--panel);border:1px solid var(--line);border-radius:10px;color:var(--ink);font-size:15px;line-height:1.6;padding:16px;outline:none;font-family:'Courier New',monospace"></textarea>
@@ -1806,16 +1807,20 @@ function renderDiscs(){
       return '<span class="chip core'+(n===DS.el?' on':'')+'" style="color:var(--ink)" onclick="dPickEl(\''+esc(n).replace(/'/g,"\\'")+'\')">'+esc(n)+(c?' <span style="color:var(--dim)">'+c+'</span>':'')+'</span>'; }).join('')
     +'<span class="chip" onclick="dAddEl()">＋ element</span>'+(DS.el?'<span class="chip" onclick="dEditEl()">✎ '+esc(DS.el)+'</span>':'');
   const box=$('dBody');
-  if(!DS.el){ box.innerHTML='<div class="note">Pick an element on the <b style="color:var(--acc)">'+esc(L[DS.lv])+'</b> disc to write its abstractions.</div>'; renderDLinks(); return; }
+  const from=DS.from?'<div class="en" style="border-color:var(--good);margin:10px 0"><span class="tag" style="color:var(--good)">FROM SCENE · '+esc(DS.from.title)
+      +' · <span style="cursor:pointer;color:var(--dim)" onclick="DS.from=null;renderDiscs()">cancel</span></span>'
+      +(DS.from.focus?esc(DS.from.focus):'<span style="color:var(--dim)">(this scene has no focus line yet)</span>')
+      +(DS.el?'':'<div class="note" style="margin-top:6px">Pick the element above — Dialogue, Image… — and this lands in the abstraction box.</div>')+'</div>':'';
+  if(!DS.el){ box.innerHTML=from+(DS.from?'':'<div class="note">Pick an element on the <b style="color:var(--acc)">'+esc(L[DS.lv])+'</b> disc to write its abstractions.</div>'); renderDLinks(); return; }
   const T=X.ty[DS.ty]||X.ty[0]; if(DS.r>=T.r.length) DS.r=0;
   const ed=DS.edit?dById(DS.edit):null;
-  let h='<div class="dform"><div class="q2">'+(ed?'EDIT ABSTRACTION':'NEW ABSTRACTION')+' · '+esc(L[DS.lv])+' · '+esc(DS.el)+'</div>';
+  let h=(ed?'':from)+'<div class="dform"><div class="q2">'+(ed?'EDIT ABSTRACTION':'NEW ABSTRACTION')+' · '+esc(L[DS.lv])+' · '+esc(DS.el)+'</div>';
   h+='<div class="dlab">TYPE</div><div class="chips wrapc">'+X.ty.map((t,i)=>'<span class="chip core'+(i===DS.ty?' on':'')+'" style="color:'+ABS_COL[i%8]+'" onclick="DS.ty='+i+';DS.r=0;renderDiscs()">'+esc(t.n)+'</span>').join('')+'</div>';
   h+='<div class="note" style="margin:2px 0 8px">throws away <b style="color:var(--ink)">'+esc(T.d)+'</b> · keeps <b style="color:var(--ink)">'+esc(T.k)+'</b></div>';
   h+='<div class="dlab">RUNG</div><div class="chips wrapc">'+T.r.map((r,i)=>'<span class="chip core'+(i===DS.r?' on':'')+'" style="color:var(--blue)" onclick="DS.r='+i+';renderDiscs()">'+(i+1)+'. '+esc(r)+'</span>').join('')
      +'<span class="chip" onclick="dEditRungs()">✎ rungs of '+esc(T.n)+'</span></div>';
   h+='<input id="dLb" class="dinp" placeholder="label" value="'+esc(ed?ed.lb:'')+'">';
-  h+='<textarea id="dTx" class="dinp" rows="4" placeholder="anything">'+esc(ed?ed.tx:'')+'</textarea>';
+  h+='<textarea id="dTx" class="dinp" rows="4" placeholder="anything">'+esc(ed?ed.tx:(DS.from?DS.from.focus:''))+'</textarea>';
   h+='<div class="ctl"><button class="btn primary" onclick="dSave()">'+(ed?'SAVE CHANGES':'ADD')+'</button>'+(ed?'<button class="btn" onclick="DS.edit=null;renderDiscs()">cancel</button>':'')+'</div></div>';
   const mine=items.filter(i=>i.el===DS.el);
   h+='<h3>'+esc(DS.el).toUpperCase()+' ON THE '+esc(L[DS.lv]).toUpperCase()+' DISC · '+mine.length+'</h3>';
@@ -1825,6 +1830,7 @@ function renderDiscs(){
     h+='<div class="dcard'+(DS.open===i.id?' hi':'')+'" id="dc-'+i.id+'" style="border-left-color:'+col+'">'
       +'<span class="tag" style="color:'+col+'">ABSTRACT · '+esc(dTag(i)).toUpperCase()+'</span>'
       +'<div class="dlb">'+esc(i.lb||'(no label)')+'</div>'
+      +(i.src&&DB.drafts.some(d=>d.id===i.src)?'<div class="note" style="margin:2px 0;cursor:pointer;color:var(--good)" onclick="toScene(\''+i.src+'\')">FROM SCENE: '+esc(DB.drafts.find(d=>d.id===i.src).title)+' ↗</div>':'')
       +(i.tx?'<div class="dtx">'+esc(i.tx)+'</div>':'')
       +'<div class="dlab" style="margin-top:10px">CONCRETE</div>'
       +'<textarea class="dinp dcc" rows="3" placeholder="anything concrete, under this abstraction" oninput="dCC(\''+i.id+'\',this.value)">'+esc(i.cc||'')+'</textarea>'
@@ -1905,7 +1911,7 @@ function dEditRungs(){
 function dSave(){
   const lb=$('dLb').value.trim(), tx=$('dTx').value.trim(); if(!lb&&!tx) return $('dLb').focus();
   if(DS.edit){ const i=dById(DS.edit); if(i){ Object.assign(i,{lb,tx,ty:DS.ty,r:DS.r,up:Date.now()}); } DS.open=DS.edit; DS.edit=null; }
-  else { const i={id:uid(),ar:DB.arena,pj:dPj(),lv:DS.lv,el:DS.el,ty:DS.ty,r:DS.r,lb,tx,cc:'',ln:[],d:today(),up:Date.now()}; A().it.push(i); DS.open=i.id; }
+  else { const i={id:uid(),ar:DB.arena,pj:dPj(),lv:DS.lv,el:DS.el,ty:DS.ty,r:DS.r,lb,tx,cc:'',ln:[],d:today(),up:Date.now()}; if(DS.from){ i.src=DS.from.id; DS.from=null; } A().it.push(i); DS.open=i.id; }
   save(); renderDiscs();
 }
 let dCCt=null;
@@ -1950,6 +1956,7 @@ function dText(list){
     if(head!==last){ out+='=== '+head+' ===\n\n'; last=head; }
     out+='Abstract: '+(i.lb||'(no label)')+'\n';
     out+='Type: '+dTag(i)+'\n';
+    if(i.src){ const sc=(DB.drafts||[]).find(d=>d.id===i.src); if(sc) out+='Scene: '+sc.title+'\n'; }
     if(i.tx) out+='Note: '+i.tx.replace(/\n/g,'\n      ')+'\n';
     (i.ln||[]).forEach(id=>{ const o=dById(id); if(o) out+='Link: '+(o.lb||'(no label)')+' ('+(o.ar!==i.ar?o.ar+' · ':'')+(o.pj&&o.pj!==i.pj?o.pj+' · ':'')+dWhere(o)+')\n'; });
     out+='Concrete: '+(i.cc?i.cc.replace(/\n/g,'\n          '):'—')+'\n';
@@ -2342,6 +2349,23 @@ function pinToggle(){
   }
   D.up=Date.now(); save(); renderFocus();
 }
+/* scene → DISCS: open the Scene disc with the scene's focus line ready to become an
+   abstraction; the abstraction keeps the scene's id (src) so its card links back */
+const absFrom=id=>((DB.abs&&DB.abs.it)||[]).filter(a=>a.src===id).length;
+function toDiscs(i){
+  const D=DB.drafts[i]; if(!D) return;
+  flushPending();
+  DS.from={id:D.id,title:D.title,focus:(D.focus||'').trim()};
+  const L=A().lv[DB.arena], si=L.findIndex(n=>/scene/i.test(n));
+  DS.lv=si>=0?si:Math.min(1,L.length-1); DS.el=null; DS.edit=null;
+  pane('discs',[...document.querySelectorAll('.tab')].find(t=>t.textContent==='DISCS')); renderDiscs();
+  setTimeout(()=>{ const e=$('dEls'); if(e) e.scrollIntoView({block:'center',behavior:'smooth'}); },60);
+}
+function toScene(id){
+  const i=DB.drafts.findIndex(d=>d.id===id); if(i<0) return;
+  if(DB.drafts[i].ar!==DB.arena){ DB.arena=DB.drafts[i].ar; save(); renderCompass(); }
+  pane('draft',[...document.querySelectorAll('.tab')].find(t=>t.textContent==='STRAIGHT')); curDraft=i; renderDraft(); window.scrollTo(0,0);
+}
 function renderPins(){
   const b=$('pinBox'); if(!b) return;
   const list=draftsHere().filter(x=>x.d.pin).sort((a,c)=>(c.d.wk||c.d.pin||0)-(a.d.wk||a.d.pin||0));
@@ -2350,7 +2374,10 @@ function renderPins(){
     const f=(x.d.focus||'').split('\n').find(l=>l.trim())||'';
     return '<div class="en" onclick="pickDraft('+x.i+')" style="cursor:pointer;border-color:'+(x.i===curDraft?'var(--acc)':'var(--line)')+(x.i===curDraft?';background:rgba(212,162,78,.06)':'')+'">'
       +'<span class="tag" style="color:var(--dim)">'+(k===0?'<b style="color:var(--acc)">● LAST WORKED ON</b> · ':'')+esc(x.d.title)+'</span>'
-      +(f?'<span style="color:var(--good)">'+esc(f)+'</span>':'<span style="color:var(--dim)">no focus yet</span>')+'</div>';
+      +'<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-end">'
+      +(f?'<span style="color:var(--good)">'+esc(f)+'</span>':'<span style="color:var(--dim)">no focus yet</span>')
+      +'<span style="flex:none;display:flex;gap:6px;align-items:center">'+(absFrom(x.d.id)?'<span class="note" style="margin:0">'+absFrom(x.d.id)+' abstr.</span>':'')
+      +'<button class="mini" style="color:var(--acc);border-color:var(--acc)" onclick="event.stopPropagation();toDiscs('+x.i+')">→ DISCS</button></span></div></div>';
   }).join('');
 }
 
