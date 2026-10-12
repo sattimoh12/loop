@@ -207,6 +207,7 @@
       <div id="pinBox"></div>
       <div class="ctl" style="align-items:flex-start;flex-wrap:nowrap">
         <select id="draftSel" onchange="pickDraft(this.value)" style="background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px;flex:0 1 42%;min-width:0;height:40px"></select>
+        <button class="btn" onclick="renameDraft()" title="edit the scene heading" style="height:40px;flex:none">✎</button>
         <button class="btn" id="pinBtn" onclick="pinToggle()" title="pin this scene (up to 5)" style="height:40px;flex:none;color:var(--acc)">☆</button>
         <textarea id="focusTxt" rows="1" placeholder="what this scene is for…" oninput="focusSave()" style="flex:1 1 auto;min-width:0;min-height:40px;max-height:160px;background:var(--panel);border:1px solid var(--line);border-radius:8px;color:var(--good);font-size:14px;line-height:1.4;padding:9px 11px;outline:none;font-family:inherit;resize:none"></textarea>
       </div>
@@ -1104,6 +1105,7 @@ function mergeDB(cur,inc){
   (inc.drafts||[]).forEach(d=>{
     const e=cur.drafts.find(x=>dk(x)===dk(d));
     if(!e){ cur.drafts.push(d); added++; return; }
+    if((d.focus||'')!==(e.focus||'')) e.focus=fxMerge(e,d);
     const a=(e.txt||''), b=(d.txt||'');
     if(a===b||a.indexOf(b)>=0) return;               /* incoming adds nothing */
     if(b.indexOf(a)>=0){ e.txt=b; e.up=d.up||e.up; return; }  /* strict superset */
@@ -1139,6 +1141,17 @@ function mergeDB(cur,inc){
     Object.keys(cur.abs.el||{}).forEach(a=>{ cur.abs.el[a]=cur.abs.el[a].filter(n=>!G('e:'+a+'|'+n)); });
   }
   return added;
+}
+/* focus box merge: when both copies carry a focus timestamp (fu) the newer wins, so
+   deleting a line syncs; copies from before the timestamp existed are combined line
+   by line instead, so nothing typed on either device can be dropped */
+function fxMerge(e,d){
+  const a=e.focus||'', b=d.focus||''; if(a===b) return a;
+  if(e.fu&&d.fu) return d.fu>e.fu?b:a;
+  const lines=a?a.split('\n'):[];
+  b.split('\n').forEach(l=>{ if(l.trim()&&lines.indexOf(l)<0) lines.push(l); });
+  if(!e.fu&&!d.fu) e.fu=Date.now();
+  return lines.join('\n');
 }
 function refKey(r){ return r.src||(r.img?r.img.length+':'+r.img.slice(-48):'')||((r.t||'')+'|'+(r.d||'')); }
 
@@ -1992,11 +2005,16 @@ function syPayload(){
 function syncMerge(cur,inc,force){
   inc=JSON.parse(JSON.stringify(inc));
   const cd={}; (cur.drafts||[]).forEach(d=>{ if(d.id) cd[d.id]=d; });
+  /* the focus box is merged on its own first, so a candidate line typed on one
+     device is never lost to a newer edit of the scene text on the other */
+  const same=(a,b)=>(a.txt||'')===(b.txt||'')&&a.title===b.title&&(a.focus||'')===(b.focus||'')&&!!a.pin===!!b.pin;
   inc.drafts=(inc.drafts||[]).filter(d=>{ const e=d.id&&cd[d.id]; if(!e) return true;
-    if((d.txt||'')===(e.txt||'')&&d.title===e.title) return false;
-    if((d.up||0)<=(e.up||0)) return false;
-    if(force||(e.up||0)<=SY.okAt){ Object.assign(e,d); return false; }
-    return true; });
+    const f=fxMerge(e,d), fu=Math.max(e.fu||0,d.fu||0)||undefined;
+    const keep=()=>{ e.focus=f; if(fu) e.fu=fu; };
+    if(same(d,e)){ keep(); return false; }
+    if((d.up||0)<=(e.up||0)){ keep(); return false; }
+    if(force||(e.up||0)<=SY.okAt){ Object.assign(e,d); keep(); return false; }
+    keep(); d.focus=f; return true; });
   const newer=(c,cl,i,il)=>!!i&&i!==c&&(il||[]).some(w=>w.t===c)&&!(cl||[]).some(w=>w.t===i);
   Object.keys(inc.compW||{}).forEach(a=>{ const C=(cur.compW||{})[a], I=inc.compW[a]; if(C&&I&&newer(C.c,C.log,I.c,I.log)) C.c=I.c; });
   if(newer(cur.modelCompass,cur.compassLogM,inc.modelCompass,inc.compassLogM)) cur.modelCompass=inc.modelCompass;
@@ -2291,7 +2309,7 @@ function impGo(){
   };
   const add=(title,txt)=>{ const id=uid()+Math.random().toString(36).slice(2,5); DB.drafts.push({id,title,txt,ar:DB.arena,pj,d:today(),up:now}); place(id,title); last=id; if(!focus) focus=id; return id; };
   if(IMP.pre&&IMP.preMode==='focus'&&IMP.open){
-    IMP.open.focus=((IMP.open.focus||'').replace(/\s+$/,'')+'\n'+IMP.pre).replace(/^\n/,''); IMP.open.up=now; last=IMP.open.id; focus=IMP.open.id; c.pre='added to the focus of “'+IMP.open.title+'”';
+    IMP.open.focus=((IMP.open.focus||'').replace(/\s+$/,'')+'\n'+IMP.pre).replace(/^\n/,''); IMP.open.up=now; IMP.open.fu=now; last=IMP.open.id; focus=IMP.open.id; c.pre='added to the focus of “'+IMP.open.title+'”';
   } else if(IMP.pre&&IMP.preMode==='append'&&IMP.open){
     IMP.open.txt=(IMP.open.txt||'').replace(/\s+$/,'')+'\n\n'+IMP.pre; IMP.open.up=now; last=IMP.open.id; focus=IMP.open.id; c.pre='added to the end of “'+IMP.open.title+'”';
   } else if(IMP.pre&&IMP.preMode==='note'){
@@ -2330,8 +2348,19 @@ function renderFocus(){
 }
 function focusSave(){
   const D=curDraft!==null?DB.drafts[curDraft]:null; if(!D) return;
-  D.focus=$('focusTxt').value; D.up=Date.now(); D.wk=Date.now(); fitFocus();
+  D.focus=$('focusTxt').value; D.up=Date.now(); D.wk=Date.now(); D.fu=Date.now(); fitFocus();
   clearTimeout(focusT); focusT=setTimeout(()=>{ focusT=null; save(); renderPins(); },500);
+}
+/* edit the heading: renames the scene, and if its text starts with the old heading
+   line, that line changes too so the scene and its title never disagree */
+function renameDraft(){
+  const D=curDraft!==null?DB.drafts[curDraft]:null; if(!D) return;
+  flushPending();
+  const v=prompt('Scene heading:',D.title); if(v===null) return;
+  const t=v.trim().replace(/\s+/g,' '); if(!t||t===D.title) return;
+  const lines=String(D.txt||'').split('\n');
+  if(lines[0].trim()===D.title.trim()) { lines[0]=t; D.txt=lines.join('\n'); }
+  D.title=t; D.up=Date.now(); D.wk=Date.now(); save(); renderDraft();
 }
 function pinToggle(){
   const D=curDraft!==null?DB.drafts[curDraft]:null; if(!D) return;
