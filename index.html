@@ -219,6 +219,7 @@
       </div>
       <textarea id="draftTxt" oninput="autosaveDraft()" placeholder="INT. — the straight version…" style="width:100%;min-height:55vh;background:var(--panel);border:1px solid var(--line);border-radius:10px;color:var(--ink);font-size:15px;line-height:1.6;padding:16px;outline:none;font-family:'Courier New',monospace"></textarea>
     </div>
+    <div class="modal" id="histModal" onclick="if(event.target===this)this.classList.remove('on')"><div class="mcard" id="histBody"></div></div>
     <div class="modal" id="impModal" onclick="if(event.target===this)this.classList.remove('on')"><div class="mcard">
       <div class="q">IMPORT SCENES INTO <span id="impWhere"></span></div>
       <div class="note">Paste a script, or choose a file (.txt, .fountain, .fdx). Every line starting INT. / EXT. / INT./EXT. / I/E / EST. starts a scene; everything under it, up to the next heading, belongs to it. Re-paste a revised scene and it replaces the old one.</div>
@@ -1145,6 +1146,47 @@ function mergeDB(cur,inc){
 /* focus box merge: when both copies carry a focus timestamp (fu) the newer wins, so
    deleting a line syncs; copies from before the timestamp existed are combined line
    by line instead, so nothing typed on either device can be dropped */
+/* older versions of a scene: newest first, distinct texts, at most ten */
+function histJoin(a,b){
+  const out=[], seen=new Set();
+  (a||[]).concat(b||[]).sort((x,y)=>(y.up||0)-(x.up||0)).forEach(v=>{ if(v&&v.txt&&!seen.has(v.txt)){ seen.add(v.txt); out.push(v); } });
+  return out.slice(0,10);
+}
+function histAdd(d,txt,up,acc){
+  if(!txt||!String(txt).trim()||txt===d.txt) return;
+  const h=histJoin([{txt,up:up||0}],(acc||[]).concat(d.hist||[])).filter(v=>v.txt!==d.txt);
+  d.hist=h; if(acc){ acc.length=0; h.forEach(v=>acc.push(v)); }
+}
+/* fold every "[date backup copy]" scene back into its scene: the newest text wins,
+   the other texts become older versions, all focus lines are combined, and the
+   copies leave every order. Same result on every device, so they converge. */
+const BKRE=/(?:\s\[[^\]]*backup copy\])+$/;
+const hasCopies=db=>(db.drafts||[]).some(d=>BKRE.test(d.title||''));
+function collapseCopies(db){
+  if(!hasCopies(db)) return 0;
+  const groups={};
+  db.drafts.forEach(d=>{ const k=d.ar+'|'+String(d.title||'').replace(BKRE,''); (groups[k]=groups[k]||[]).push(d); });
+  const drop=new Set();
+  Object.values(groups).forEach(g=>{
+    const copies=g.filter(d=>BKRE.test(d.title||'')); if(!copies.length) return;
+    /* the scene the copies came from; another scene that merely shares the title
+       is left alone */
+    const base=g.find(d=>!BKRE.test(d.title||''))||copies.slice().sort((a,b)=>(b.up||0)-(a.up||0))[0];
+    g=[base].concat(copies.filter(d=>d!==base));
+    const win=g.slice().sort((a,b)=>(b.up||0)-(a.up||0))[0];
+    let hist=histJoin(base.hist,[]), fl=[];
+    g.forEach(d=>{ hist=histJoin(hist,(d.hist||[]).concat(d.txt?[{txt:d.txt,up:d.up||0}]:[]));
+      String(d.focus||'').split('\n').forEach(l=>{ if(l.trim()&&fl.indexOf(l)<0) fl.push(l); }); });
+    base.title=String(base.title||'').replace(BKRE,'');
+    base.txt=win.txt; base.up=Math.max(...g.map(d=>d.up||0)); base.focus=fl.join('\n'); base.fu=Date.now();
+    if(g.some(d=>d.pin)) base.pin=base.pin||Date.now();
+    base.hist=hist.filter(v=>v.txt!==base.txt).slice(0,10);
+    g.forEach(d=>{ if(d!==base) drop.add(d.id); });
+  });
+  db.drafts=db.drafts.filter(d=>!drop.has(d.id));
+  (db.orders||[]).forEach(o=>{ o.seq=(o.seq||[]).filter(id=>!drop.has(id)); });
+  return drop.size;
+}
 function fxMerge(e,d){
   const a=e.focus||'', b=d.focus||''; if(a===b) return a;
   if(e.fu&&d.fu) return d.fu>e.fu?b:a;
@@ -1175,7 +1217,7 @@ function restore(mode){
     let inc=null; try{ inc=JSON.parse(bag.loop_v3||bag.loop_v2||bag.loop_v1||'null'); }catch(e){}
     if(!inc){ alert('That backup has no readable loop_v3 data to merge.'); return; }
     const before=DB.entries.length;
-    const n=mergeDB(DB,inc);
+    const n=mergeDB(DB,inc); collapseCopies(DB);
     if(!confirm('Merge added '+n+' item(s). Entries '+before+' → '+DB.entries.length+'.\n\nKeep this result?')){ location.reload(); return; }
     if(save()){ alert('Merged and saved.'); location.reload(); }
     else alert('Merged in memory but the SAVE FAILED — see the warning bar.');
@@ -1379,7 +1421,7 @@ function renderDraft(){
   const D=curDraft!==null?DB.drafts[curDraft]:null;
   $('draftTxt').value=D?D.txt:'';
   $('draftTxt').disabled=!D;
-  $('draftMeta').textContent=D?`${(D.txt.trim().match(/\S+/g)||[]).length} words · ${D.pj||D.ar}`:'';
+  $('draftMeta').innerHTML=D?`${(D.txt.trim().match(/\S+/g)||[]).length} words · ${esc(D.pj||D.ar)}`+((D.hist||[]).length?` · <span style="cursor:pointer;color:var(--blue)" onclick="histOpen()">⟲ ${D.hist.length} older version${D.hist.length>1?'s':''}</span>`:''):'';
   renderFocus();
   reorderIfOpen();
 }
@@ -2008,13 +2050,26 @@ function syncMerge(cur,inc,force){
   /* the focus box is merged on its own first, so a candidate line typed on one
      device is never lost to a newer edit of the scene text on the other */
   const same=(a,b)=>(a.txt||'')===(b.txt||'')&&a.title===b.title&&(a.focus||'')===(b.focus||'')&&!!a.pin===!!b.pin;
-  inc.drafts=(inc.drafts||[]).filter(d=>{ const e=d.id&&cd[d.id]; if(!e) return true;
-    const f=fxMerge(e,d), fu=Math.max(e.fu||0,d.fu||0)||undefined;
-    const keep=()=>{ e.focus=f; if(fu) e.fu=fu; };
-    if(same(d,e)){ keep(); return false; }
-    if((d.up||0)<=(e.up||0)){ keep(); return false; }
-    if(force||(e.up||0)<=SY.okAt){ Object.assign(e,d); keep(); return false; }
-    keep(); d.focus=f; return true; });
+  /* scenes travel by id only — never matched by title, never copied. Same id: the
+     newer edit wins; if both sides changed it since the last sync, the losing text
+     is kept as an older version of the scene (hist). Before 12 Oct 2026 a conflict
+     made a "[backup copy]" scene instead, and those copies bred on every sync. */
+  (inc.drafts||[]).forEach(d=>{
+    if(!d||!d.id) return;
+    const e=cd[d.id];
+    if(!e){ cur.drafts.push(d); cd[d.id]=d; return; }
+    const f=fxMerge(e,d), fu=Math.max(e.fu||0,d.fu||0)||undefined, h=histJoin(e.hist,d.hist);
+    if(!same(d,e)){
+      if((d.up||0)>(e.up||0)){
+        const old={txt:e.txt,up:e.up};
+        const both=!force&&(e.up||0)>SY.okAt;
+        Object.assign(e,d);
+        if(both) histAdd(e,old.txt,old.up,h);
+      } else if(!force&&(d.up||0)>SY.okAt) histAdd(e,d.txt,d.up,h);
+    }
+    e.focus=f; if(fu) e.fu=fu; if(h.length) e.hist=histJoin(h,e.hist); 
+  });
+  inc.drafts=[];
   const newer=(c,cl,i,il)=>!!i&&i!==c&&(il||[]).some(w=>w.t===c)&&!(cl||[]).some(w=>w.t===i);
   Object.keys(inc.compW||{}).forEach(a=>{ const C=(cur.compW||{})[a], I=inc.compW[a]; if(C&&I&&newer(C.c,C.log,I.c,I.log)) C.c=I.c; });
   if(newer(cur.modelCompass,cur.compassLogM,inc.modelCompass,inc.compassLogM)) cur.modelCompass=inc.modelCompass;
@@ -2077,16 +2132,18 @@ async function syPull(){
   if(!txt&&j.download_url===null) throw new Error('data.json unreadable');
   if(!txt){ const raw=await syApi('GET',null,{'Accept':'application/vnd.github.raw+json'}); if(!raw.ok) throw new Error(syWhy(raw)); txt=await raw.text(); }
   const inc=JSON.parse(txt);
-  syncMerge(DB,inc,false);
+  const curId=curDraft!==null&&DB.drafts[curDraft]?DB.drafts[curDraft].id:null;
+  syncMerge(DB,inc,false); collapseCopies(DB);
+  if(curId){ const k=DB.drafts.findIndex(d=>d.id===curId); curDraft=k>=0?k:null; }
   Object.keys(DB.proj||{}).forEach(a=>{ if(!DB.proj[a].cur) DB.proj[a].cur='ALL'; });
   SY.applying=true; save(); SY.applying=false;
   /* push back only if this device holds something the repo copy lacks; merging
      the repo copy with itself first fills in defaults, so the comparison sees
      content, not missing empty fields. Without this the two devices would take
      turns re-committing the same data on every poll. */
-  const remote=JSON.parse(txt); syncMerge(remote,JSON.parse(txt),true);
+  const remote=JSON.parse(txt), dirty=hasCopies(remote); syncMerge(remote,JSON.parse(txt),true);
   const before=JSON.stringify(remote); syncMerge(remote,syPayload(),true);
-  SY.sha=j.sha; SY.last=JSON.stringify(remote)===before?JSON.stringify(syPayload()):''; sySave();
+  SY.sha=j.sha; SY.last=(!dirty&&JSON.stringify(remote)===before)?JSON.stringify(syPayload()):''; sySave();
   syRefresh();
 }
 async function syPush(){
@@ -2353,6 +2410,32 @@ function focusSave(){
 }
 /* edit the heading: renames the scene, and if its text starts with the old heading
    line, that line changes too so the scene and its title never disagree */
+/* older versions of the open scene: read, copy, or make one the current text (the
+   current text then becomes an older version, so nothing is lost either way) */
+function histOpen(){
+  const D=curDraft!==null?DB.drafts[curDraft]:null; if(!D||!(D.hist||[]).length) return;
+  flushPending();
+  const wc=t=>((t||'').match(/\S+/g)||[]).length;
+  $('histBody').innerHTML='<div class="q">OLDER VERSIONS · '+esc(D.title)+'</div><div class="note">Newest first. These came from sync conflicts. Using one swaps it with the current text, so the current text becomes an older version.</div>'
+    +D.hist.map((v,i)=>'<div style="border-top:1px solid var(--line);padding:10px 0"><div class="note" style="margin:0 0 6px">'+(v.up?new Date(v.up).toLocaleString():'undated')+' · '+wc(v.txt)+' words</div>'
+      +'<div class="rt" style="max-height:24vh;overflow:auto;margin:0 0 8px;font-size:12.5px">'+esc(v.txt)+'</div>'
+      +'<div class="acts"><button class="mini" onclick="histCopy('+i+')">copy</button><button class="mini" style="color:var(--acc);border-color:var(--acc)" onclick="histUse('+i+')">use this version</button></div></div>').join('')
+    +'<div class="ctl"><button class="btn" onclick="$(\'histModal\').classList.remove(\'on\')">close</button></div>';
+  $('histModal').classList.add('on');
+}
+function histCopy(i){
+  const v=DB.drafts[curDraft].hist[i]; if(!v) return;
+  const ok=()=>alert('Copied.');
+  if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(v.txt).then(ok,()=>prompt('Copy this:',v.txt)); else prompt('Copy this:',v.txt);
+}
+function histUse(i){
+  const D=DB.drafts[curDraft], v=D&&D.hist[i]; if(!v) return;
+  if(!confirm('Make this version the scene text? The current text is kept as an older version.')) return;
+  const cur={txt:D.txt,up:D.up};
+  D.hist.splice(i,1); D.txt=v.txt; D.up=Date.now(); D.wk=Date.now();
+  D.hist=histJoin([cur],D.hist).filter(x=>x.txt!==D.txt);
+  save(); $('histModal').classList.remove('on'); renderDraft();
+}
 function renameDraft(){
   const D=curDraft!==null?DB.drafts[curDraft]:null; if(!D) return;
   flushPending();
@@ -2429,6 +2512,8 @@ function expFile(){
   deliver(t,name,'text/plain');
 }
 
+/* fold any backup-copy scenes already on this device (see collapseCopies) */
+if(collapseCopies(DB)){ SY.applying=true; save(); SY.applying=false; }
 /* DISCS is the opening screen */
 renderDiscs();
 </script>
