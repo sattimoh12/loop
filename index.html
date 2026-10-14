@@ -215,10 +215,17 @@
         <button class="btn" onclick="newDraft()">＋ new scene</button>
         <button class="btn" onclick="impOpen()">⇪ import scenes</button>
         <button class="btn" onclick="expOpen()">⇩ export scenes</button>
+        <button class="btn" onclick="candOpen()" style="color:var(--good)">⇩ candidates</button>
         <span class="note" id="draftMeta"></span>
       </div>
       <textarea id="draftTxt" oninput="autosaveDraft()" placeholder="INT. — the straight version…" style="width:100%;min-height:55vh;background:var(--panel);border:1px solid var(--line);border-radius:10px;color:var(--ink);font-size:15px;line-height:1.6;padding:16px;outline:none;font-family:'Courier New',monospace"></textarea>
     </div>
+    <div class="modal" id="candModal" onclick="if(event.target===this)this.classList.remove('on')"><div class="mcard">
+      <div class="q">CANDIDATES · <span id="candWhere"></span></div>
+      <label class="note" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="candPin" onchange="candBuild()"> pinned scenes only</label>
+      <textarea id="candOut" class="dinp" rows="14" readonly></textarea>
+      <div class="ctl" style="align-items:center"><button class="btn primary" onclick="candCopy()">COPY</button><button class="btn" onclick="candFile()">⇩ .txt</button><button class="btn" onclick="$('candModal').classList.remove('on')">close</button><span class="note" id="candCount"></span></div>
+    </div></div>
     <div class="modal" id="histModal" onclick="if(event.target===this)this.classList.remove('on')"><div class="mcard" id="histBody"></div></div>
     <div class="modal" id="impModal" onclick="if(event.target===this)this.classList.remove('on')"><div class="mcard">
       <div class="q">IMPORT SCENES INTO <span id="impWhere"></span></div>
@@ -2468,6 +2475,34 @@ function renderPins(){
 
 /* ---- scene export: pick scenes (or all) in the order you're working in, out as
    Fountain — focus lines ride along as [[notes]], which writing apps keep as notes ---- */
+/* ---- candidates out: every scene with something in its focus box, in scene
+   order — heading, then each line as a bullet — plain text for the Notes app ---- */
+function candOpen(){
+  flushPending();
+  const P=pget(); $('candWhere').textContent=DB.arena+(P.cur&&P.cur!=='ALL'?' · '+P.cur:'');
+  candBuild(); $('candModal').classList.add('on');
+}
+function candBuild(){
+  const P=pget(), pinOnly=$('candPin').checked;
+  const list=expScenes().filter(d=>(d.focus||'').trim()&&(!pinOnly||d.pin));
+  const lines=list.reduce((n,d)=>n+d.focus.split('\n').filter(l=>l.trim()).length,0);
+  $('candOut').value=list.length
+    ?'CANDIDATES — '+DB.arena+(P.cur&&P.cur!=='ALL'?' · '+P.cur:'')+' — '+new Date().toLocaleDateString()+'\n\n'
+      +list.map(d=>d.title+'\n'+d.focus.split('\n').filter(l=>l.trim()).map(l=>'• '+l.trim()).join('\n')).join('\n\n')+'\n'
+    :'';
+  $('candCount').textContent=list.length?lines+' line'+(lines>1?'s':'')+' from '+list.length+' scene'+(list.length>1?'s':''):(pinOnly?'No pinned scene has a focus line yet.':'No scene has a focus line yet.');
+}
+function candCopy(){
+  const t=$('candOut'); if(!t.value) return;
+  t.select(); t.setSelectionRange(0,t.value.length);
+  const ok=()=>alert('Copied — paste it into Notes.');
+  if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(t.value).then(ok,()=>{ document.execCommand('copy'); ok(); });
+  else { document.execCommand('copy'); ok(); }
+}
+function candFile(){
+  const t=$('candOut').value; if(!t) return;
+  const P=pget(); deliver(t,(DB.arena+(P.cur&&P.cur!=='ALL'?'-'+P.cur:'')+'-candidates-'+today()).replace(/[^\w\-]+/g,'_')+'.txt','text/plain');
+}
 function expScenes(){
   const P=pget(), here=draftsHere().map(x=>x.d), o=curOrder(), by={};
   here.forEach(d=>by[d.id]=d);
