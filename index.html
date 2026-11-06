@@ -151,6 +151,8 @@
   .ccard.killed .ct { text-decoration:line-through; }
   .ccard .tag { font-size:9px; letter-spacing:1.5px; opacity:.75; display:block; white-space:normal; font-weight:400; }
   .ccard .acts { white-space:normal; }
+  .cfam { font-size:12px; letter-spacing:3px; color:var(--acc); margin:22px 0 2px; padding-top:10px; border-top:1px solid var(--line); font-weight:700; }
+  .cn { color:var(--dim); font-weight:400; margin-right:4px; }
   .cgh { font-size:10px; letter-spacing:2px; color:var(--vio); margin:16px 0 4px; text-transform:uppercase; }
   .cimp { display:flex; gap:9px; align-items:flex-start; padding:6px 2px; border-top:1px solid var(--line); font-size:13.5px; line-height:1.4; white-space:pre-wrap; }
   .cimp.dup { color:var(--dim); }
@@ -2130,12 +2132,9 @@ function renderCandList(){
   const list=cItems().filter(c=>(CS.f==='all'||(c.s||'')===CS.f)&&(!q||cNorm(c.t+' '+(c.g||'')).indexOf(q)>=0));
   if(!cItems().length){ $('cList').innerHTML='<div class="note" style="margin-top:12px">No candidates in '+esc(DB.arena)+' · '+esc(pget().cur||'ALL')+' yet. <b style="color:var(--acc);cursor:pointer" onclick="ciOpen()">Import old notes</b>, or add them above, one per line.</div>'; return; }
   if(!list.length){ $('cList').innerHTML='<div class="note" style="margin-top:12px">Nothing matches.</div>'; return; }
-  /* grouped: groups in the order they first appear, ungrouped last */
-  const groups=[], by={};
-  list.forEach(c=>{ const g=c.g||''; if(!by[g]){ by[g]=[]; groups.push(g); } by[g].push(c); });
-  groups.sort((a,b)=>(a?0:1)-(b?0:1));
-  const multi=pget().cur==='ALL';
-  $('cList').innerHTML=groups.map(g=>'<div class="cgh">'+(g?esc(g):'no group')+' · '+by[g].length+'</div>'+by[g].map(c=>{
+  /* same shape as the export: families, then numbered sections */
+  const multi=pget().cur==='ALL'; let k=0;
+  const card=c=>{
     if(CS.edit===c.id) return '<div class="ccard"><textarea id="cEd" class="dinp" rows="3">'+esc(c.t)+'</textarea>'
       +'<input id="cEdG" class="dinp" placeholder="group" value="'+esc(c.g||'')+'" style="font-size:14px">'
       +'<div class="acts"><button class="mini on" onclick="cEditSave(\''+c.id+'\')">save</button><button class="mini" onclick="CS.edit=null;renderCandList()">cancel</button></div></div>';
@@ -2145,6 +2144,9 @@ function renderCandList(){
       +'<button class="mini kill'+(c.s==='killed'?' on':'')+'" onclick="cMark(\''+c.id+'\',\'killed\')">✕</button>'
       +'<button class="mini" onclick="CS.edit=\''+c.id+'\';renderCandList()">edit</button>'
       +'<button class="mini" onclick="cDel(\''+c.id+'\')">delete</button></div></div>';
+  };
+  $('cList').innerHTML=cTree(list).map(F=>(F.f?'<div class="cfam">'+esc(F.f)+'</div>':'')+F.secs.map(S=>{ k++;
+    return '<div class="cgh">'+k+'. '+esc(S.name)+(S.where?' · '+esc(S.where):'')+' · '+S.items.length+'</div>'+S.items.map((c,i)=>card(c).replace('<span class="ct">','<span class="ct"><span class="cn">'+(i+1)+'.</span> ')).join('');
   }).join('')).join('');
 }
 /* scene focus lines already are candidates (STRAIGHT's ⇩ candidates); shown here read-only so the tab holds all of them */
@@ -2251,27 +2253,93 @@ function allPick(){
   return {abs:A().it.filter(inS), cands:C().filter(inS).filter(c=>$('allKilled').checked||c.s!=='killed'),
           scenes:$('allScenes').checked?(DB.drafts||[]).filter(d=>(d.focus||'').trim()&&inD(d)):[]};
 }
-function cText(list){
-  let out='', last=null; const at=new Map(C().map((c,i)=>[c,i]));
-  list.slice().sort((a,b)=>a.ar.localeCompare(b.ar)||(a.pj||'').localeCompare(b.pj||'')||(a.g?0:1)-(b.g?0:1)||(a.g||'').localeCompare(b.g||'')||(at.get(a)||0)-(at.get(b)||0)).forEach(c=>{
-    const head=c.ar+(c.pj?' · '+c.pj:'')+(c.g?' — '+c.g:'');
-    if(head!==last){ out+=(last===null?'':'\n')+'=== '+head+' ===\n'; last=head; }
-    out+=(c.s==='picked'?'★ ':c.s==='killed'?'✕ ':'• ')+c.t.replace(/\n/g,'\n  ')+'\n';
+/* ---- the shape of a candidate list: families → sections → items ----
+   A group like "MODEL · Horizon & play" is family MODEL, section "Horizon & play".
+   Families and sections keep the order they first appear in (so an import's own
+   order survives), sections with no family follow, ungrouped comes last. Both the
+   tab and the text export use this, so what you read in the app is what you copy. */
+function cSplitG(g){ g=String(g||'').trim(); const i=g.indexOf(' · '); return i>0?[g.slice(0,i).trim(),g.slice(i+3).trim()]:['',g]; }
+function cTree(list){
+  const at=new Map(C().map((c,i)=>[c,i]));
+  const scopes=new Set(list.map(c=>c.ar+'|'+(c.pj||'')));
+  const fams=[], fby={};
+  list.slice().sort((a,b)=>(at.has(a)?at.get(a):0)-(at.has(b)?at.get(b):0)).forEach(c=>{
+    const [f,n]=cSplitG(c.g), fk=f||(n?'\u0001':'\u0002');
+    if(!fby[fk]){ fby[fk]={f,secs:[],sby:{}}; fams.push(fk); }
+    const F=fby[fk], where=scopes.size>1?c.ar+(c.pj?' · '+c.pj:''):'', sk=n+'|'+where;
+    if(!F.sby[sk]){ F.sby[sk]={name:n||'Ungrouped',where,items:[]}; F.secs.push(F.sby[sk]); }
+    F.sby[sk].items.push(c);
+  });
+  return fams.sort((a,b)=>(a[0]==='\u0002')-(b[0]==='\u0002')||(a[0]==='\u0001')-(b[0]==='\u0001')).map(k=>fby[k]);
+}
+const RULE='————————————————————————————';
+/* one numbered item: "  12. text", wrapped lines hang under the text */
+function numLine(n,w,t,mark){
+  const head='  '+String(n).padStart(w)+'. '+(mark?mark+' ':''), pad=' '.repeat(head.length);
+  return head+String(t).trim().split('\n').join('\n'+pad)+'\n';
+}
+function cText(list,sec){
+  let out='', k=0;
+  cTree(list).forEach(F=>{
+    if(F.f) out+='\n'+F.f.toUpperCase()+'\n';
+    F.secs.forEach(S=>{ k++;
+      out+='\n'+(sec?sec+'.'+k+'  ':'')+S.name+(S.where?'  ('+S.where+')':'')+'  ·  '+S.items.length+'\n\n';
+      const w=String(S.items.length).length;
+      S.items.forEach((c,i)=>out+=numLine(i+1,w,c.t,c.s==='picked'?'★':c.s==='killed'?'✕':''));
+    });
+  });
+  return out;
+}
+/* discs, numbered: one section per disc+element (top disc first), each abstraction with its fields indented under it */
+function dTree(list){
+  const X=A(), scopes=new Set(list.map(i=>i.ar+'|'+(i.pj||''))), secs=[], by={};
+  list.slice().sort((a,b)=>a.ar.localeCompare(b.ar)||(a.pj||'').localeCompare(b.pj||'')||b.lv-a.lv||a.el.localeCompare(b.el)||(a.up||0)-(b.up||0)).forEach(i=>{
+    const k=i.ar+'|'+(i.pj||'')+'|'+i.lv+'|'+i.el;
+    if(!by[k]){ by[k]={name:dWhere(i),where:scopes.size>1?i.ar+(i.pj?' · '+i.pj:''):'',items:[]}; secs.push(by[k]); }
+    by[k].items.push(i);
+  });
+  return secs;
+}
+function dNumText(list,sec){
+  let out='';
+  dTree(list).forEach((S,k)=>{
+    out+='\n'+sec+'.'+(k+1)+'  '+S.name+(S.where?'  ('+S.where+')':'')+'  ·  '+S.items.length+'\n\n';
+    const w=String(S.items.length).length, pad=' '.repeat(w+4);
+    S.items.forEach((i,n)=>{
+      const t=A().ty[i.ty]||{n:'?',r:[]};
+      out+=numLine(n+1,w,i.lb||'(no label)');
+      out+=pad+t.n+' · '+(t.r[i.r]||'rung '+(i.r+1))+'\n';
+      const field=(lab,v)=>{ if(v&&String(v).trim()) out+=pad+lab+': '+String(v).trim().split('\n').join('\n'+pad+' '.repeat(lab.length+2))+'\n'; };
+      field('Note',i.tx); field('Concrete',i.cc);
+      const ln=(i.ln||[]).map(dById).filter(Boolean).map(o=>(o.lb||'(no label)')+' ('+(o.ar!==i.ar?o.ar+' · ':'')+dWhere(o)+')');
+      if(ln.length) field('Linked to',ln.join('; '));
+      out+='\n';
+    });
   });
   return out;
 }
 function allText(){
   const X=allPick(), P=pget();
-  const names={pj:DB.arena+' · '+(P.cur||'ALL'),ar:DB.arena+' (all projects)',all:'everything'};
-  const fl=X.scenes.reduce((n,d)=>n+d.focus.split('\n').filter(l=>l.trim()).length,0);
-  let t='THE LOOP — DISCS + CANDIDATES — '+names[ALLS]+' — exported '+today()+'\n\n';
-  t+='########## DISCS · ABSTRACTIONS ('+X.abs.length+') ##########\n\n'+(X.abs.length?dText(X.abs):'(none)\n\n');
-  t+='########## CANDIDATES ('+X.cands.length+') ##########\n\n'+(X.cands.length?cText(X.cands):'(none)\n');
-  if($('allScenes').checked){
-    t+='\n########## SCENE FOCUS LINES ('+fl+') ##########\n\n'+(X.scenes.length?X.scenes.map(d=>'=== '+d.ar+(d.pj?' · '+d.pj:'')+' — '+d.title+' ===\n'
-      +d.focus.split('\n').filter(l=>l.trim()).map(l=>'• '+l.trim()).join('\n')).join('\n\n')+'\n':'(none)\n');
+  const names={pj:DB.arena+' · '+(P.cur||'ALL'),ar:DB.arena+' · all projects',all:'everything'};
+  const lines=d=>d.focus.split('\n').map(l=>l.trim()).filter(Boolean);
+  const fl=X.scenes.reduce((n,d)=>n+lines(d).length,0), withS=$('allScenes').checked;
+  const pl=(n,w)=>n+' '+w+(n===1?'':'s');
+  const day=new Date().toLocaleDateString(undefined,{day:'numeric',month:'long',year:'numeric'});
+  const head=(n,title,count)=>'\n\n'+RULE+'\n'+n+'. '+title+'  ·  '+count+'\n'+RULE+'\n';
+  /* contents: the three parts, and every candidate section under part 2 */
+  let toc='CONTENTS\n\n1. Discs  ·  '+pl(X.abs.length,'abstraction')+'\n2. Candidates  ·  '+X.cands.length+'\n', k=0;
+  cTree(X.cands).forEach(F=>{ if(F.f) toc+='     '+F.f.toUpperCase()+'\n'; F.secs.forEach(S=>{ k++; toc+='     '+('2.'+k).padEnd(6)+S.name+(S.where?' ('+S.where+')':'')+'  ·  '+S.items.length+'\n'; }); });
+  if(withS) toc+='3. Scene focus lines  ·  '+fl+'\n';
+  let t='THE LOOP — DISCS + CANDIDATES\n'+names[ALLS]+'  ·  '+day+'\n\n'+toc;
+  t+=head(1,'DISCS',pl(X.abs.length,'abstraction'))+(X.abs.length?dNumText(X.abs,1):'\n  (none yet)\n');
+  t+=head(2,'CANDIDATES',X.cands.length)+(X.cands.length?cText(X.cands,2):'\n  (none yet)\n');
+  if(withS){
+    t+=head(3,'SCENE FOCUS LINES',fl);
+    if(!X.scenes.length) t+='\n  (none yet)\n';
+    X.scenes.forEach((d,i)=>{ const L=lines(d), w=String(L.length).length;
+      t+='\n3.'+(i+1)+'  '+d.title+(ALLS==='all'&&DB.arenas.length>1?'  ('+d.ar+(d.pj?' · '+d.pj:'')+')':'')+'\n\n'+L.map((l,n)=>numLine(n+1,w,l)).join(''); });
   }
-  return {t,X,fl};
+  return {t:t.replace(/\n{3,}/g,'\n\n').trim()+'\n',X,fl};
 }
 function allBuild(){
   $('allScope').innerHTML=[['pj','THIS PROJECT'],['ar','THIS DISCIPLINE'],['all','EVERYTHING']].map(([k,l])=>'<span class="'+(ALLS===k?'on':'')+'" onclick="ALLS=\''+k+'\';allBuild()">'+l+'</span>').join('');
