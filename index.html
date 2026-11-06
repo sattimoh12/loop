@@ -143,7 +143,18 @@
   .doc .docnav a:active { color:var(--acc); border-color:var(--acc); }
   @media (min-width:620px){ .doc p, .doc li { font-size:15px; } }
   /* discs */
-  body.p-discs .dock { display:none; }
+  body.p-discs .dock, body.p-cands .dock { display:none; }
+  /* candidates — own card class: .en.cand is blurred and core-view filtered app-wide */
+  .ccard { padding:8px 10px; border-left:2px solid var(--dim); margin:5px 0; font-size:15px; line-height:1.45; border-radius:0 6px 6px 0; white-space:pre-wrap; }
+  .ccard.picked { border-color:var(--good); color:var(--good); font-weight:600; }
+  .ccard.killed { color:var(--dim); }
+  .ccard.killed .ct { text-decoration:line-through; }
+  .ccard .tag { font-size:9px; letter-spacing:1.5px; opacity:.75; display:block; white-space:normal; font-weight:400; }
+  .ccard .acts { white-space:normal; }
+  .cgh { font-size:10px; letter-spacing:2px; color:var(--vio); margin:16px 0 4px; text-transform:uppercase; }
+  .cimp { display:flex; gap:9px; align-items:flex-start; padding:6px 2px; border-top:1px solid var(--line); font-size:13.5px; line-height:1.4; white-space:pre-wrap; }
+  .cimp.dup { color:var(--dim); }
+  .cimp input[type=checkbox] { margin-top:2px; }
   #dStack { margin:6px -4px 2px; }
   .wrapc { flex-wrap:wrap; overflow:visible; }
   .dform { border:1px solid var(--line); border-radius:10px; padding:12px; margin:12px 0; }
@@ -182,6 +193,7 @@
 
   <div class="tabs">
     <span class="tab on" onclick="pane('discs',this);renderDiscs()">DISCS</span>
+    <span class="tab" onclick="pane('cands',this);renderCands()">CANDIDATES</span>
     <span class="tab" onclick="pane('stream',this)">STREAM</span>
     <span class="tab" onclick="pane('draft',this);renderDraft()">STRAIGHT</span>
     <span class="tab" onclick="pane('model',this);modelMode(MDMODE)">MODEL</span>
@@ -525,7 +537,48 @@
       <button class="btn" onclick="dExport('ar')">this discipline</button>
       <button class="btn primary" onclick="dExport('all')">everything</button>
     </div>
+    <div class="ctl"><button class="btn" style="color:var(--good)" onclick="allOpen()">⧉ discs + candidates, in one go</button></div>
     <div class="modal" id="dModal" onclick="if(event.target===this)this.classList.remove('on')"><div class="mcard" id="dModalBody"></div></div>
+  </div>
+  <div class="pane" id="pane-cands">
+    <div class="note" style="display:flex;justify-content:space-between;gap:8px;margin-top:10px"><span id="cScope" style="color:var(--vio);letter-spacing:1.5px"></span><span id="cCount"></span></div>
+    <div class="ctl">
+      <button class="btn primary" onclick="ciOpen()">⇪ import old notes</button>
+      <button class="btn" style="color:var(--good)" onclick="allOpen()">⧉ copy discs + candidates</button>
+    </div>
+    <textarea id="cAdd" class="dinp" rows="2" placeholder="add candidates — one per line"></textarea>
+    <div class="ctl" style="margin-top:4px"><button class="btn" onclick="cAddGo()">＋ add</button><input id="cGrpAdd" class="dinp" placeholder="group (optional)" style="flex:1;min-width:120px;margin:0;font-size:14px;padding:7px 10px"></div>
+    <input id="cSearch" placeholder="search candidates…" oninput="CS.q=this.value;renderCandList()" style="width:100%;background:var(--panel);border:1px solid var(--line);border-radius:8px;color:var(--ink);font-size:14px;padding:8px 12px;outline:none;font-family:inherit;margin:8px 0">
+    <div class="filterRow" id="cF"></div>
+    <div id="cList"></div>
+    <div id="cScenes"></div>
+    <div class="modal" id="ciModal" onclick="if(event.target===this)this.classList.remove('on')"><div class="mcard">
+      <div class="q">IMPORT OLD NOTES AS CANDIDATES · <span id="ciWhere"></span></div>
+      <div class="note">Paste notes, or choose one or more files (.txt, .md). Bullets and numbering are stripped. A <b style="color:var(--ink)"># Heading</b> line (and each file's name) becomes the group for the notes under it, so old notes arrive already sorted. Anything already in your candidates is unticked.</div>
+      <label class="btn" style="cursor:pointer;display:inline-block;margin:4px 0">choose files…<input type="file" id="ciFile" multiple accept=".txt,.md,.markdown,text/plain,text/markdown" style="display:none" onchange="ciLoad(this)"></label>
+      <textarea id="ciTxt" class="dinp" rows="8" placeholder="# Old notebook&#10;- a woman returns a gift she never opened&#10;- the argument happens entirely by text" oninput="ciPreview()" style="font-size:14px"></textarea>
+      <div class="filterRow" id="ciMode" style="margin-top:6px">
+        <span class="on" data-m="line" onclick="ciSetMode('line')">ONE PER LINE</span><span data-m="para" onclick="ciSetMode('para')">ONE PER PARAGRAPH (blank line between)</span>
+      </div>
+      <label class="note" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="ciColon" checked onchange="ciPreview()"> short lines ending in “:” are group headings too</label>
+      <div class="ctl" style="align-items:center;margin:4px 0">
+        <span class="note" style="margin:0">into project</span>
+        <select id="ciPj" style="background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:13px"></select>
+        <span class="note" style="margin:0">default group</span>
+        <input id="ciGrp" placeholder="(none)" oninput="ciPreview()" style="flex:1;min-width:90px;margin:0;font-size:13px;padding:6px 8px">
+      </div>
+      <div class="ctl" style="align-items:center;margin:2px 0"><button class="btn" onclick="ciAll(true)">all</button><button class="btn" onclick="ciAll(false)">none</button><span class="note" id="ciCount"></span></div>
+      <div id="ciList" style="max-height:34vh;overflow:auto;margin:6px 0"></div>
+      <div class="ctl"><button class="btn primary" onclick="ciGo()">IMPORT</button><button class="btn" onclick="$('ciModal').classList.remove('on')">cancel</button></div>
+    </div></div>
+    <div class="modal" id="allModal" onclick="if(event.target===this)this.classList.remove('on')"><div class="mcard">
+      <div class="q">DISCS + CANDIDATES — COPY IN ONE GO</div>
+      <div class="filterRow" id="allScope" style="margin-top:8px"></div>
+      <label class="note" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="allKilled" onchange="allBuild()"> include killed (✕) candidates</label>
+      <label class="note" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="allScenes" checked onchange="allBuild()"> include scene focus lines (from STRAIGHT)</label>
+      <textarea id="allOut" class="dinp" rows="14" readonly style="font-family:ui-monospace,Menlo,monospace;font-size:12.5px"></textarea>
+      <div class="ctl" style="align-items:center"><button class="btn primary" onclick="allCopy()">COPY</button><button class="btn" onclick="allFile()">⇩ .txt</button><button class="btn" onclick="$('allModal').classList.remove('on')">close</button><span class="note" id="allCount"></span></div>
+    </div></div>
   </div>
   <div class="pane" id="pane-data">
     <h3 style="margin-top:14px">SYNC · PHONE ↔ LAPTOP (GITHUB)</h3>
@@ -746,13 +799,13 @@ function cycleArena(){
   if(DB.arenas.length<2){ addArena(); return; }
   const i=DB.arenas.indexOf(DB.arena);
   DB.arena=DB.arenas[(i+1)%DB.arenas.length];
-  save(); renderCompass(); renderStream(); reorderIfOpen(); discsIfOpen();
+  save(); renderCompass(); renderStream(); reorderIfOpen(); discsIfOpen(); candsIfOpen();
 }
 function addArena(){
   const n=(prompt('New discipline name? (e.g. POETRY)')||'').trim().toUpperCase();
   if(!n||DB.arenas.includes(n)) return;
   DB.arenas.push(n); DB.compW[n]={c:'',log:[]}; DB.arena=n;
-  save(); renderCompass(); renderStream(); reorderIfOpen(); discsIfOpen();
+  save(); renderCompass(); renderStream(); reorderIfOpen(); discsIfOpen(); candsIfOpen();
 }
 /* projects within a discipline */
 function pget(){ DB.proj=DB.proj||{}; DB.proj[DB.arena]=DB.proj[DB.arena]||{list:[],cur:'ALL'}; return DB.proj[DB.arena]; }
@@ -761,13 +814,13 @@ function cycleProject(){
   if(!P.list.length){ addProject(); return; }
   const opts=['ALL'].concat(P.list);
   P.cur=opts[(opts.indexOf(P.cur)+1)%opts.length];
-  save(); renderCompass(); renderStream(); reorderIfOpen(); discsIfOpen();
+  save(); renderCompass(); renderStream(); reorderIfOpen(); discsIfOpen(); candsIfOpen();
 }
 function addProject(){
   const n=(prompt('Project name? (e.g. NEUKÖLLN)')||'').trim();
   if(!n) return; const P=pget();
   if(!P.list.includes(n)) P.list.push(n);
-  P.cur=n; save(); renderCompass(); renderStream(); reorderIfOpen(); discsIfOpen();
+  P.cur=n; save(); renderCompass(); renderStream(); reorderIfOpen(); discsIfOpen(); candsIfOpen();
 }
 
 /* When the discipline/project filters hide entries, say so. Silently showing an
@@ -1137,12 +1190,19 @@ function mergeDB(cur,inc){
     (ia.it||[]).forEach(o=>{ const e=ca.it.find(x=>x.id===o.id);
       if(!e){ ca.it.push(o); added++; } else if((o.up||0)>(e.up||0)) Object.assign(e,o); });
   }
+  /* candidates: identified, last-touched wins */
+  if(inc.cands){
+    cur.cands=cur.cands||[];
+    inc.cands.forEach(o=>{ const e=cur.cands.find(x=>x.id===o.id);
+      if(!e){ cur.cands.push(o); added++; } else if((o.up||0)>(e.up||0)) Object.assign(e,o); });
+  }
   /* deletions: a tombstone (id → time) travels with the data so a deleted item
      can't come back from the other device; a negative time means re-added */
   cur.gone=cur.gone||{};
   Object.keys(inc.gone||{}).forEach(k=>{ if(Math.abs(inc.gone[k])>Math.abs(cur.gone[k]||0)) cur.gone[k]=inc.gone[k]; });
   const G=k=>(cur.gone[k]||0)>0;
   cur.refs=(cur.refs||[]).filter(r=>!G('r:'+refKey(r)));
+  if(cur.cands) cur.cands=cur.cands.filter(c=>!G('c:'+c.id));
   if(cur.abs){
     cur.abs.it=(cur.abs.it||[]).filter(i=>!G('a:'+i.id));
     cur.abs.it.forEach(i=>{ if(i.ln) i.ln=i.ln.filter(x=>!G('a:'+x)); });
@@ -1354,6 +1414,7 @@ function exportMd(){
   if(!Object.keys(P).length) md+='_none_\n';
 
   if(D.abs&&(D.abs.it||[]).length){ md+='\n## Discs — abstractions\n\n```\n'+dText(D.abs.it)+'```\n'; }
+  if((D.cands||[]).length){ md+='\n## Candidates ('+D.cands.length+')\n\n```\n'+cText(D.cands)+'```\n'; }
 
   md+='\n## Boxes\n';
   const B=D.boxes||{};
@@ -2041,6 +2102,189 @@ function dDownload(){
   const b=new Blob([$('dOut').value],{type:'text/plain'}), a=document.createElement('a');
   a.href=URL.createObjectURL(b); a.download='abstractions-'+today()+'.txt'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
 }
+/* ---- CANDIDATES: a home of their own ----
+   Old notes and loose ideas, each one a candidate waiting for a verdict. Kept in
+   DB.cands, apart from the fog stream, so a few hundred imported notes never bury
+   a live session or flood REVIEW. Each: {id, t, g (group), ar, pj, s ('' | picked |
+   killed), d, up}. Scoped by discipline and project like DISCS; identified, so
+   sync and merge are last-touched-wins, and deletions travel as 'c:'+id tombstones. */
+function C(){ DB.cands=DB.cands||[]; return DB.cands; }
+let CS={q:'',f:'all',edit:null};
+function cItems(){ const P=pget(); return C().filter(c=>c.ar===DB.arena&&(P.cur==='ALL'||c.pj===P.cur)); }
+const cById=id=>C().find(c=>c.id===id);
+const cNorm=s=>String(s||'').toLowerCase().replace(/\s+/g,' ').trim();
+function candsIfOpen(){ if($('pane-cands')&&$('pane-cands').classList.contains('on')) renderCands(); }
+function renderCands(){
+  const P=pget(), it=cItems();
+  $('cScope').textContent=DB.arena+' · '+(P.cur||'ALL');
+  const n=s=>it.filter(c=>(c.s||'')===s).length;
+  $('cCount').textContent=it.length+' candidate'+(it.length===1?'':'s');
+  const F=[['all','ALL',it.length],['','OPEN',n('')],['picked','★ PICKED',n('picked')],['killed','✕ KILLED',n('killed')]];
+  $('cF').innerHTML=F.map(([k,l,c])=>'<span class="'+(CS.f===k?'on':'')+'" onclick="CS.f=\''+k+'\';renderCandList()">'+l+' '+c+'</span>').join('');
+  renderCandList();
+  renderCandScenes();
+}
+function renderCandList(){
+  document.querySelectorAll('#cF span').forEach((s,i)=>s.classList.toggle('on',['all','','picked','killed'][i]===CS.f));
+  const q=cNorm(CS.q);
+  const list=cItems().filter(c=>(CS.f==='all'||(c.s||'')===CS.f)&&(!q||cNorm(c.t+' '+(c.g||'')).indexOf(q)>=0));
+  if(!cItems().length){ $('cList').innerHTML='<div class="note" style="margin-top:12px">No candidates in '+esc(DB.arena)+' · '+esc(pget().cur||'ALL')+' yet. <b style="color:var(--acc);cursor:pointer" onclick="ciOpen()">Import old notes</b>, or add them above, one per line.</div>'; return; }
+  if(!list.length){ $('cList').innerHTML='<div class="note" style="margin-top:12px">Nothing matches.</div>'; return; }
+  /* grouped: groups in the order they first appear, ungrouped last */
+  const groups=[], by={};
+  list.forEach(c=>{ const g=c.g||''; if(!by[g]){ by[g]=[]; groups.push(g); } by[g].push(c); });
+  groups.sort((a,b)=>(a?0:1)-(b?0:1));
+  const multi=pget().cur==='ALL';
+  $('cList').innerHTML=groups.map(g=>'<div class="cgh">'+(g?esc(g):'no group')+' · '+by[g].length+'</div>'+by[g].map(c=>{
+    if(CS.edit===c.id) return '<div class="ccard"><textarea id="cEd" class="dinp" rows="3">'+esc(c.t)+'</textarea>'
+      +'<input id="cEdG" class="dinp" placeholder="group" value="'+esc(c.g||'')+'" style="font-size:14px">'
+      +'<div class="acts"><button class="mini on" onclick="cEditSave(\''+c.id+'\')">save</button><button class="mini" onclick="CS.edit=null;renderCandList()">cancel</button></div></div>';
+    const tag=multi&&c.pj?c.pj:'';
+    return '<div class="ccard '+(c.s||'')+'">'+(tag?'<span class="tag">'+esc(tag)+'</span>':'')+'<span class="ct">'+esc(c.t)+'</span>'
+      +'<div class="acts"><button class="mini'+(c.s==='picked'?' on':'')+'" onclick="cMark(\''+c.id+'\',\'picked\')">★</button>'
+      +'<button class="mini kill'+(c.s==='killed'?' on':'')+'" onclick="cMark(\''+c.id+'\',\'killed\')">✕</button>'
+      +'<button class="mini" onclick="CS.edit=\''+c.id+'\';renderCandList()">edit</button>'
+      +'<button class="mini" onclick="cDel(\''+c.id+'\')">delete</button></div></div>';
+  }).join('')).join('');
+}
+/* scene focus lines already are candidates (STRAIGHT's ⇩ candidates); shown here read-only so the tab holds all of them */
+function renderCandScenes(){
+  const list=expScenes().filter(d=>(d.focus||'').trim());
+  $('cScenes').innerHTML=list.length?'<h3>FROM SCENES · focus lines (edit them in STRAIGHT)</h3>'+list.map(d=>'<div class="cgh" style="color:var(--dim)">'+esc(d.title)+'</div>'
+    +d.focus.split('\n').filter(l=>l.trim()).map(l=>'<div class="ccard" style="border-color:var(--good);color:var(--good)">'+esc(l.trim())+'</div>').join('')).join(''):'';
+}
+function cNew(t,g,pj){ return {id:uid(),t,g:g||'',ar:DB.arena,pj:pj||'',s:'',d:today(),up:Date.now()}; }
+function cAddGo(){
+  const g=$('cGrpAdd').value.trim(), pj=dPj();
+  const have=new Set(cItems().map(c=>cNorm(c.t)));
+  const rows=$('cAdd').value.split('\n').map(ciClean).filter(t=>t&&!have.has(cNorm(t)));
+  if(!rows.length) return $('cAdd').focus();
+  rows.forEach(t=>{ C().push(cNew(t,g,pj)); have.add(cNorm(t)); });
+  $('cAdd').value=''; save(); renderCands();
+}
+function cMark(id,s){ const c=cById(id); if(!c) return; c.s=c.s===s?'':s; c.up=Date.now(); save(); renderCands(); }
+function cEditSave(id){
+  const c=cById(id); if(!c) return; const t=$('cEd').value.trim();
+  if(!t) return cDel(id);
+  c.t=t; c.g=$('cEdG').value.trim(); c.up=Date.now(); CS.edit=null; save(); renderCands();
+}
+function cDel(id){
+  const c=cById(id); if(!c||!confirm('Delete this candidate?\n\n'+c.t)) return;
+  DB.gone=DB.gone||{}; DB.gone['c:'+id]=Date.now();
+  DB.cands=C().filter(x=>x.id!==id); CS.edit=null; save(); renderCands();
+}
+
+/* ---- import: old notes → candidates ---- */
+let CI={mode:'line',rows:[]};
+const ciClean=l=>String(l||'').replace(/^\s*(?:[-*•–—·▪◦>]+|\[[ xX]\]|\(?\d{1,3}[.)]|[a-zA-Z][.)](?=\s))\s*/,'').replace(/\s+$/,'').trim();
+function ciHead(l){
+  const t=l.trim();
+  const m=t.match(/^#{1,6}\s+(.+?)\s*#*$/); if(m) return m[1].trim();
+  if($('ciColon').checked&&/^[^:]{1,50}:$/.test(t)&&!/^[-*•\d]/.test(t)) return t.slice(0,-1).trim();
+  return null;
+}
+function ciParse(txt){
+  const lines=String(txt||'').replace(/\r\n?/g,'\n').split('\n'), out=[];
+  const base=$('ciGrp').value.trim(); let g=base, buf=[];
+  const sep=l=>/^\s*([-*_=~])\1{2,}\s*$/.test(l);
+  const flush=()=>{ const t=buf.map(ciClean).filter(Boolean).join('\n').trim(); if(t) out.push({t,g}); buf=[]; };
+  lines.forEach(l=>{
+    const h=ciHead(l); if(h!==null){ flush(); g=h; return; }
+    if(sep(l)){ flush(); g=base; return; }   /* a --- divider ends the group */
+    if(!l.trim()){ flush(); return; }
+    if(CI.mode==='line'){ buf=[l]; flush(); } else buf.push(l);
+  });
+  flush();
+  return out;
+}
+function ciOpen(){
+  const P=pget();
+  $('ciWhere').textContent=DB.arena;
+  $('ciPj').innerHTML='<option value="">(no project)</option>'+P.list.map(n=>'<option'+(n===P.cur?' selected':'')+'>'+esc(n)+'</option>').join('');
+  $('ciTxt').value=''; $('ciFile').value=''; $('ciGrp').value=''; CI.rows=[]; ciPreview();
+  $('ciModal').classList.add('on'); setTimeout(()=>$('ciTxt').focus(),50);
+}
+function ciSetMode(m){ CI.mode=m; document.querySelectorAll('#ciMode span').forEach(s=>s.classList.toggle('on',s.dataset.m===m)); ciPreview(); }
+function ciLoad(inp){
+  const fs=[...inp.files]; if(!fs.length) return;
+  Promise.all(fs.map(f=>new Promise(r=>{ const R=new FileReader(); R.onload=()=>r({n:f.name,t:String(R.result)}); R.onerror=()=>r({n:f.name,t:''}); R.readAsText(f); })))
+    .then(all=>{
+      /* each file's name (no extension) opens its own group; a heading inside the file takes over from there */
+      const add=all.map(x=>'# '+x.n.replace(/\.[^.]+$/,'')+'\n'+x.t).join('\n\n');
+      const cur=$('ciTxt').value; $('ciTxt').value=(cur.trim()?cur+'\n\n':'')+add;
+      ciPreview();
+    });
+}
+function ciPreview(){
+  const have=new Set(C().filter(c=>c.ar===DB.arena).map(c=>cNorm(c.t))), seen=new Set();
+  CI.rows=ciParse($('ciTxt').value).map(r=>{ const k=cNorm(r.t), dup=have.has(k)||seen.has(k); seen.add(k); return Object.assign(r,{dup,on:!dup}); });
+  let last=null;
+  $('ciList').innerHTML=CI.rows.map((r,i)=>{
+    let h=''; if(r.g!==last){ last=r.g; h='<div class="cgh">'+(r.g?esc(r.g):'no group')+'</div>'; }
+    return h+'<label class="cimp'+(r.dup?' dup':'')+'"><input type="checkbox" '+(r.on?'checked':'')+' onchange="CI.rows['+i+'].on=this.checked;ciCount()"><span>'+esc(r.t)+(r.dup?' <i style="font-size:11px">· already here</i>':'')+'</span></label>';
+  }).join('')||'<div class="note">Nothing to import yet.</div>';
+  ciCount();
+}
+function ciAll(on){ CI.rows.forEach(r=>r.on=on); document.querySelectorAll('#ciList input').forEach(c=>c.checked=on); ciCount(); }
+function ciCount(){
+  const n=CI.rows.filter(r=>r.on).length, d=CI.rows.filter(r=>r.dup).length, g=new Set(CI.rows.filter(r=>r.on).map(r=>r.g)).size;
+  $('ciCount').textContent=n+' of '+CI.rows.length+' selected'+(n?' · '+g+' group'+(g===1?'':'s'):'')+(d?' · '+d+' already here':'');
+}
+function ciGo(){
+  const rows=CI.rows.filter(r=>r.on); if(!rows.length) return alert('Nothing selected.');
+  const pj=$('ciPj').value, now=Date.now();
+  rows.forEach((r,i)=>{ const c=cNew(r.t,r.g,pj); c.up=now+i; C().push(c); });
+  if(!save()) return;
+  $('ciModal').classList.remove('on'); CS.f='all'; CS.q=''; $('cSearch').value='';
+  const P=pget(); if(pj&&P.cur!=='ALL'&&P.cur!==pj){ P.cur=pj; save(); renderCompass(); }
+  renderCands();
+  alert('Imported '+rows.length+' candidate'+(rows.length===1?'':'s')+' into '+DB.arena+(pj?' · '+pj:'')+'.');
+}
+
+/* ---- copy everything: discs + candidates (+ scene focus lines) as one text ---- */
+let ALLS='all';
+function allOpen(){ flushPending(); allBuild(); $('allModal').classList.add('on'); }
+function allPick(){
+  const P=pget(), a=DB.arena;
+  const inS=ALLS==='all'?()=>true:ALLS==='ar'?o=>o.ar===a:o=>o.ar===a&&(P.cur==='ALL'||o.pj===P.cur);
+  const inD=ALLS==='pj'?o=>o.ar===a&&(P.cur==='ALL'||o.pj===P.cur||!o.pj):inS;
+  return {abs:A().it.filter(inS), cands:C().filter(inS).filter(c=>$('allKilled').checked||c.s!=='killed'),
+          scenes:$('allScenes').checked?(DB.drafts||[]).filter(d=>(d.focus||'').trim()&&inD(d)):[]};
+}
+function cText(list){
+  let out='', last=null; const at=new Map(C().map((c,i)=>[c,i]));
+  list.slice().sort((a,b)=>a.ar.localeCompare(b.ar)||(a.pj||'').localeCompare(b.pj||'')||(a.g?0:1)-(b.g?0:1)||(a.g||'').localeCompare(b.g||'')||(at.get(a)||0)-(at.get(b)||0)).forEach(c=>{
+    const head=c.ar+(c.pj?' · '+c.pj:'')+(c.g?' — '+c.g:'');
+    if(head!==last){ out+=(last===null?'':'\n')+'=== '+head+' ===\n'; last=head; }
+    out+=(c.s==='picked'?'★ ':c.s==='killed'?'✕ ':'• ')+c.t.replace(/\n/g,'\n  ')+'\n';
+  });
+  return out;
+}
+function allText(){
+  const X=allPick(), P=pget();
+  const names={pj:DB.arena+' · '+(P.cur||'ALL'),ar:DB.arena+' (all projects)',all:'everything'};
+  const fl=X.scenes.reduce((n,d)=>n+d.focus.split('\n').filter(l=>l.trim()).length,0);
+  let t='THE LOOP — DISCS + CANDIDATES — '+names[ALLS]+' — exported '+today()+'\n\n';
+  t+='########## DISCS · ABSTRACTIONS ('+X.abs.length+') ##########\n\n'+(X.abs.length?dText(X.abs):'(none)\n\n');
+  t+='########## CANDIDATES ('+X.cands.length+') ##########\n\n'+(X.cands.length?cText(X.cands):'(none)\n');
+  if($('allScenes').checked){
+    t+='\n########## SCENE FOCUS LINES ('+fl+') ##########\n\n'+(X.scenes.length?X.scenes.map(d=>'=== '+d.ar+(d.pj?' · '+d.pj:'')+' — '+d.title+' ===\n'
+      +d.focus.split('\n').filter(l=>l.trim()).map(l=>'• '+l.trim()).join('\n')).join('\n\n')+'\n':'(none)\n');
+  }
+  return {t,X,fl};
+}
+function allBuild(){
+  $('allScope').innerHTML=[['pj','THIS PROJECT'],['ar','THIS DISCIPLINE'],['all','EVERYTHING']].map(([k,l])=>'<span class="'+(ALLS===k?'on':'')+'" onclick="ALLS=\''+k+'\';allBuild()">'+l+'</span>').join('');
+  const r=allText(); $('allOut').value=r.t;
+  $('allCount').textContent=r.X.abs.length+' abstractions · '+r.X.cands.length+' candidates'+($('allScenes').checked?' · '+r.fl+' focus lines':'');
+}
+function allCopy(){
+  const t=$('allOut'); t.select(); t.setSelectionRange(0,t.value.length);
+  const ok=()=>alert('Copied — discs and candidates together. Paste into Notes.');
+  if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(t.value).then(ok,()=>{ document.execCommand('copy'); ok(); });
+  else { document.execCommand('copy'); ok(); }
+}
+function allFile(){ deliver($('allOut').value,('loop-discs-candidates-'+today()).replace(/[^\w\-]+/g,'_')+'.txt','text/plain'); }
 /* what travels: everything except this device's own place in the app (which
    discipline/project is open, the save stamp) and the refs images */
 function syPayload(){
@@ -2090,7 +2334,7 @@ function syRefresh(){
   if(a&&a.id!=='inp'&&(a.tagName==='TEXTAREA'||a.tagName==='INPUT'||a.isContentEditable)){ SY.dirty=true; return; }
   SY.dirty=false; renderCompass();
   const p=(document.querySelector('.pane.on')||{}).id;
-  const f={'pane-stream':renderStream,'pane-discs':renderDiscs,'pane-draft':renderDraft,'pane-lib':renderLib,'pane-refs':renderRefs,'pane-pairs':renderPairs,'pane-data':renderData}[p];
+  const f={'pane-stream':renderStream,'pane-discs':renderDiscs,'pane-cands':renderCands,'pane-draft':renderDraft,'pane-lib':renderLib,'pane-refs':renderRefs,'pane-pairs':renderPairs,'pane-data':renderData}[p];
   if(f) f();
 }
 document.addEventListener('focusout',()=>setTimeout(()=>{ if(SY.dirty) syRefresh(); },300));
